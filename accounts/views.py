@@ -467,3 +467,89 @@ def update_medical_report(request):
     report.save()
 
     return JsonResponse({"message": "Report updated!"})
+
+# ---------------------------------------------------
+# UPCOMING APPOINTMENTS (Reminders)
+# ---------------------------------------------------
+@api_view(['GET'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def upcoming_appointments(request):
+
+    now = datetime.datetime.now()
+    tomorrow = now + datetime.timedelta(hours=24)
+
+    # Patient view
+    if request.user.role == "PATIENT":
+        appointments = Appointment.objects.filter(
+            patient=request.user.patient_profile,
+            start_time__gte=now,
+            start_time__lte=tomorrow
+        ).order_by("start_time")
+
+    # Doctor view
+    elif request.user.role == "DOCTOR":
+        appointments = Appointment.objects.filter(
+            doctor=request.user.doctor_profile,
+            start_time__gte=now,
+            start_time__lte=tomorrow
+        ).order_by("start_time")
+
+    else:
+        return JsonResponse({"error": "Invalid role"}, status=400)
+
+    return JsonResponse({
+        "upcoming": [
+            {
+                "id": a.id,
+                "patient": a.patient.user.username,
+                "doctor": a.doctor.user.username,
+                "start_time": a.start_time.isoformat(),
+                "end_time": a.end_time.isoformat(),
+                "status": a.status
+            }
+            for a in appointments
+        ]
+    })# ---------------------------------------------------
+# UPCOMING APPOINTMENTS (Reminders)
+# ---------------------------------------------------
+@api_view(['GET'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def upcoming_appointments(request):
+
+    now = datetime.datetime.now()
+    tomorrow = now + datetime.timedelta(hours=24)
+
+    # Patient view
+    if request.user.role == "PATIENT":
+        appointments = Appointment.objects.filter(
+            patient=request.user.patient_profile,
+            start_time__gte=now,
+            start_time__lte=tomorrow
+        ).order_by("start_time")
+
+    # Doctor view
+    elif request.user.role == "DOCTOR":
+        appointments = Appointment.objects.filter(
+            doctor=request.user.doctor_profile,
+            start_time__gte=now,
+            start_time__lte=tomorrow
+        ).order_by("start_time")
+
+    else:
+        return JsonResponse({"error": "Invalid role"}, status=400)
+
+    return JsonResponse({
+        "upcoming": [
+            {
+                "id": a.id,
+                "patient": a.patient.user.username,
+                "doctor": a.doctor.user.username,
+                "start_time": a.start_time.isoformat(),
+                "end_time": a.end_time.isoformat(),
+                "status": a.status
+            }
+            for a in appointments
+        ]
+    })
