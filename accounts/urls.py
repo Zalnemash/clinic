@@ -9,23 +9,22 @@ urlpatterns = [
     path("login/", views.login_user),
     path("register/doctor/", views.register_doctor),
 
-    # Doctor availability
-    path("doctor/add-availability/", views.add_availability, name="add_availability"),
+    # Availability
+    path("doctor/add-availability/", views.add_availability),
 
-    # Appointment actions
-    path("book/", views.book_appointment, name="book_appointment"),
+    # Appointments
+    path("book/", views.book_appointment),
     path("appointment/update/", views.update_appointment_status),
 
-    # Patient appointments
+    # Medical Reports
+    path("report/create/", views.create_medical_report),
+    path("report/<int:appointment_id>/", views.get_medical_report),
+
+    # Patient dashboard
     path("patient/<str:username>/appointments/", views.patient_appointments),
 
-    # Doctor Dashboard (ORDER MATTERS)
+    # Doctor dashboard (order matters)
     path("doctor/<str:username>/appointments/pending/", views.doctor_pending_appointments),
     path("doctor/<str:username>/appointments/today/", views.doctor_today_appointments),
-
-    # Must be LAST because it's the general pattern
     path("doctor/<str:username>/appointments/", views.doctor_all_appointments),
-
-    # Doctor marks appointment completed
-    path("doctor/appointment/complete/", views.doctor_complete_appointment),
 ]

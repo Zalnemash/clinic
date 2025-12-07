@@ -1,7 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 
-
 # ---------------------------------
 # Custom User Model
 # ---------------------------------
@@ -45,7 +44,7 @@ class PatientProfile(models.Model):
 
 
 # ---------------------------------
-# Doctor Availability (Kuwait week: Sunday = 0)
+# Doctor Availability
 # ---------------------------------
 class Availability(models.Model):
     doctor = models.ForeignKey(DoctorProfile, on_delete=models.CASCADE, related_name='availabilities')
@@ -86,3 +85,17 @@ class Appointment(models.Model):
 
     def __str__(self):
         return f"{self.patient.user.username} → Dr. {self.doctor.user.username} at {self.start_time} ({self.status})"
+
+
+# ---------------------------------
+# Medical Report Model (MUST BE OUTSIDE)
+# ---------------------------------
+class MedicalReport(models.Model):
+    appointment = models.OneToOneField(Appointment, on_delete=models.CASCADE)
+    diagnosis = models.TextField()
+    prescription = models.TextField()
+    notes = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Report for {self.appointment}"
