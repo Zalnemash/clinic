@@ -60,7 +60,7 @@ WSGI_APPLICATION = 'clinicmanager.wsgi.application'
 # Database configuration (Heroku PostgreSQL)
 DATABASES = {
     'default': dj_database_url.config(
-        default=os.environ.get("DATABASE_URL")
+        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}"
     )
 }
 

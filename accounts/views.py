@@ -207,6 +207,7 @@ def patient_appointments(request, username):
 
     data = [
         {
+            "id": a.id,
             "doctor": a.doctor.user.username,
             "start_time": a.start_time,
             "end_time": a.end_time,
