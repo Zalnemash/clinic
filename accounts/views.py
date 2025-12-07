@@ -1,21 +1,23 @@
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import get_user_model
+from django.utils.timezone import now
+from datetime import date
 import json
 
 User = get_user_model()
 
 
-# --------------------------
+# ---------------------------------------------------
 # TEST FUNCTION
-# --------------------------
+# ---------------------------------------------------
 def test_api(request):
     return JsonResponse({"message": "API is working!"})
 
 
-# --------------------------
-# PATIENT REGISTRATION API
-# --------------------------
+# ---------------------------------------------------
+# PATIENT REGISTRATION
+# ---------------------------------------------------
 @csrf_exempt
 def register_patient(request):
     if request.method == "POST":
@@ -26,18 +28,15 @@ def register_patient(request):
         phone = data.get("phone")
         gender = data.get("gender")
 
-        # Check if username exists
         if User.objects.filter(username=username).exists():
             return JsonResponse({"error": "Username already exists"}, status=400)
 
-        # Create USER with PATIENT role
         user = User.objects.create_user(
             username=username,
             password=password,
             role="PATIENT"
         )
 
-        # Create patient profile
         from .models import PatientProfile
         PatientProfile.objects.create(
             user=user,
@@ -48,6 +47,11 @@ def register_patient(request):
         return JsonResponse({"message": "Patient registered successfully!"})
 
     return JsonResponse({"error": "Invalid request method"}, status=400)
+
+
+# ---------------------------------------------------
+# USER LOGIN
+# ---------------------------------------------------
 @csrf_exempt
 def login_user(request):
     if request.method == "POST":
@@ -57,7 +61,6 @@ def login_user(request):
         password = data.get("password")
 
         from django.contrib.auth import authenticate
-
         user = authenticate(username=username, password=password)
 
         if user is None:
@@ -70,6 +73,11 @@ def login_user(request):
         })
 
     return JsonResponse({"error": "Invalid request method"}, status=400)
+
+
+# ---------------------------------------------------
+# DOCTOR REGISTRATION
+# ---------------------------------------------------
 @csrf_exempt
 def register_doctor(request):
     if request.method == "POST":
@@ -81,18 +89,15 @@ def register_doctor(request):
         clinic_room = data.get("clinic_room")
         bio = data.get("bio")
 
-        # Check if username exists
         if User.objects.filter(username=username).exists():
             return JsonResponse({"error": "Username already exists"}, status=400)
 
-        # Create the doctor user
         user = User.objects.create_user(
             username=username,
             password=password,
             role="DOCTOR"
         )
 
-        # Create doctor profile
         from .models import DoctorProfile
         DoctorProfile.objects.create(
             user=user,
@@ -104,25 +109,27 @@ def register_doctor(request):
         return JsonResponse({"message": "Doctor registered successfully!"})
 
     return JsonResponse({"error": "Invalid request method"}, status=400)
+
+
+# ---------------------------------------------------
+# ADD DOCTOR AVAILABILITY
+# ---------------------------------------------------
 @csrf_exempt
 def add_availability(request):
     if request.method == "POST":
         data = json.loads(request.body)
 
-        username = data.get("username")  # doctor username
+        username = data.get("username")
         weekday = data.get("weekday")
         start_time = data.get("start_time")
         end_time = data.get("end_time")
 
-        # Get doctor user
         try:
             user = User.objects.get(username=username, role="DOCTOR")
+            doctor_profile = user.doctor_profile
         except User.DoesNotExist:
             return JsonResponse({"error": "Doctor not found"}, status=404)
 
-        doctor_profile = user.doctor_profile
-
-        # Create availability
         from .models import Availability
         Availability.objects.create(
             doctor=doctor_profile,
@@ -134,6 +141,11 @@ def add_availability(request):
         return JsonResponse({"message": "Availability added!"})
 
     return JsonResponse({"error": "Invalid request method"}, status=400)
+
+
+# ---------------------------------------------------
+# BOOK APPOINTMENT
+# ---------------------------------------------------
 @csrf_exempt
 def book_appointment(request):
     if request.method == "POST":
@@ -144,21 +156,20 @@ def book_appointment(request):
         start_time = data.get("start_time")
         end_time = data.get("end_time")
 
-        # Get patient
+        # Patient
         try:
             patient_user = User.objects.get(username=patient_username, role="PATIENT")
             patient_profile = patient_user.patient_profile
         except User.DoesNotExist:
             return JsonResponse({"error": "Patient not found"}, status=404)
 
-        # Get doctor
+        # Doctor
         try:
             doctor_user = User.objects.get(username=doctor_username, role="DOCTOR")
             doctor_profile = doctor_user.doctor_profile
         except User.DoesNotExist:
             return JsonResponse({"error": "Doctor not found"}, status=404)
 
-        # Create appointment
         from .models import Appointment
         Appointment.objects.create(
             patient=patient_profile,
@@ -171,13 +182,18 @@ def book_appointment(request):
         return JsonResponse({"message": "Appointment booked!"})
 
     return JsonResponse({"error": "Invalid request method"}, status=400)
+
+
+# ---------------------------------------------------
+# UPDATE APPOINTMENT STATUS
+# ---------------------------------------------------
 @csrf_exempt
 def update_appointment_status(request):
     if request.method == "POST":
         data = json.loads(request.body)
 
         appointment_id = data.get("appointment_id")
-        new_status = data.get("status")  # CONFIRMED, CANCELLED, COMPLETED
+        new_status = data.get("status")
 
         from .models import Appointment
 
@@ -186,7 +202,6 @@ def update_appointment_status(request):
         except Appointment.DoesNotExist:
             return JsonResponse({"error": "Appointment not found"}, status=404)
 
-        # Update status
         appointment.status = new_status
         appointment.save()
 
@@ -196,6 +211,11 @@ def update_appointment_status(request):
         })
 
     return JsonResponse({"error": "Invalid request method"}, status=400)
+
+
+# ---------------------------------------------------
+# PATIENT APPOINTMENTS
+# ---------------------------------------------------
 def patient_appointments(request, username):
     try:
         user = User.objects.get(username=username, role="PATIENT")
@@ -217,3 +237,112 @@ def patient_appointments(request, username):
     ]
 
     return JsonResponse({"appointments": data})
+
+
+# ---------------------------------------------------
+# DOCTOR DASHBOARD — ALL APPOINTMENTS
+# ---------------------------------------------------
+@csrf_exempt
+def doctor_all_appointments(request, username):
+    try:
+        user = User.objects.get(username=username, role="DOCTOR")
+        doctor_profile = user.doctor_profile
+    except User.DoesNotExist:
+        return JsonResponse({"error": "Doctor not found"}, status=404)
+
+    appointments = doctor_profile.appointments.all().order_by("start_time")
+
+    data = [
+        {
+            "id": a.id,
+            "patient": a.patient.user.username,
+            "start_time": a.start_time,
+            "end_time": a.end_time,
+            "status": a.status
+        }
+        for a in appointments
+    ]
+
+    return JsonResponse({"appointments": data})
+
+
+# ---------------------------------------------------
+# DOCTOR DASHBOARD — PENDING ONLY
+# ---------------------------------------------------
+@csrf_exempt
+def doctor_pending_appointments(request, username):
+    try:
+        user = User.objects.get(username=username, role="DOCTOR")
+        doctor_profile = user.doctor_profile
+    except User.DoesNotExist:
+        return JsonResponse({"error": "Doctor not found"}, status=404)
+
+    appointments = doctor_profile.appointments.filter(status="PENDING")
+
+    data = [
+        {
+            "id": a.id,
+            "patient": a.patient.user.username,
+            "start_time": a.start_time,
+            "end_time": a.end_time,
+            "status": a.status
+        }
+        for a in appointments
+    ]
+
+    return JsonResponse({"appointments": data})
+
+
+# ---------------------------------------------------
+# DOCTOR DASHBOARD — TODAY'S APPOINTMENTS
+# ---------------------------------------------------
+@csrf_exempt
+def doctor_today_appointments(request, username):
+    try:
+        user = User.objects.get(username=username, role="DOCTOR")
+        doctor_profile = user.doctor_profile
+    except User.DoesNotExist:
+        return JsonResponse({"error": "Doctor not found"}, status=404)
+
+    today = date.today()
+
+    appointments = doctor_profile.appointments.filter(
+        start_time__date=today
+    ).order_by("start_time")
+
+    data = [
+        {
+            "id": a.id,
+            "patient": a.patient.user.username,
+            "start_time": a.start_time,
+            "end_time": a.end_time,
+            "status": a.status
+        }
+        for a in appointments
+    ]
+
+    return JsonResponse({"appointments": data})
+
+
+# ---------------------------------------------------
+# DOCTOR COMPLETES APPOINTMENT
+# ---------------------------------------------------
+@csrf_exempt
+def doctor_complete_appointment(request):
+    if request.method == "POST":
+        data = json.loads(request.body)
+
+        appointment_id = data.get("appointment_id")
+
+        from .models import Appointment
+        try:
+            appointment = Appointment.objects.get(id=appointment_id)
+        except Appointment.DoesNotExist:
+            return JsonResponse({"error": "Appointment not found"}, status=404)
+
+        appointment.status = "COMPLETED"
+        appointment.save()
+
+        return JsonResponse({"message": "Appointment marked as completed!"})
+
+    return JsonResponse({"error": "Invalid request method"}, status=400)
