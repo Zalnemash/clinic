@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 
+
 # ---------------------------------
 # Custom User Model
 # ---------------------------------
@@ -88,10 +89,10 @@ class Appointment(models.Model):
 
 
 # ---------------------------------
-# Medical Report Model (MUST BE OUTSIDE)
+# Medical Report (OUTSIDE Appointment)
 # ---------------------------------
 class MedicalReport(models.Model):
-    appointment = models.OneToOneField(Appointment, on_delete=models.CASCADE)
+    appointment = models.OneToOneField(Appointment, on_delete=models.CASCADE, related_name="report")
     diagnosis = models.TextField()
     prescription = models.TextField()
     notes = models.TextField(null=True, blank=True)
