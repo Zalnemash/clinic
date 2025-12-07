@@ -110,7 +110,10 @@ REST_FRAMEWORK = {
     ),
 }
 
-SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+SSIMPLE_JWT = {
+    # User stays logged in with this token for 7 days
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=7),
+
+    # Refresh token can be used to get new access tokens for 30 days
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
 }
