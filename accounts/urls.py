@@ -12,26 +12,21 @@ urlpatterns = [
     # Availability (Doctor)
     path("doctor/add-availability/", views.add_availability),
 
+    # Calendar
+    path("doctor/<str:username>/calendar/", views.doctor_calendar),
+
     # Appointments
     path("book/", views.book_appointment),
     path("appointment/update/", views.update_appointment_status),
 
-    # Patient Appointments
+    # Patient
     path("patient/<str:username>/appointments/", views.patient_appointments),
 
-    # Doctor Appointments
-    path("doctor/<str:username>/appointments/", views.doctor_all_appointments),
-    path("doctor/<str:username>/appointments/pending/", views.doctor_pending_appointments),
-    path("doctor/<str:username>/appointments/today/", views.doctor_today_appointments),
-
-    # Calendar (Available Slots)
-    path("doctor/<str:username>/calendar/", views.doctor_calendar),
+    # Reminders (Patient & Doctor)
+    path("reminders/", views.upcoming_appointments),
 
     # Medical Reports
     path("report/create/", views.create_medical_report),
     path("report/<int:appointment_id>/", views.get_medical_report),
     path("report/update/", views.update_medical_report),
-
-    # Reminders (Upcoming Appointments)
-    path("appointments/upcoming/", views.upcoming_appointments),
 ]
