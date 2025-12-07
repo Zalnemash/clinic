@@ -66,7 +66,7 @@ class Availability(models.Model):
 
 
 # ---------------------------------
-# Appointment Model
+# Appointment
 # ---------------------------------
 class Appointment(models.Model):
     patient = models.ForeignKey(PatientProfile, on_delete=models.CASCADE, related_name='appointments')
@@ -89,7 +89,7 @@ class Appointment(models.Model):
 
 
 # ---------------------------------
-# Medical Report (OUTSIDE Appointment)
+# Medical Report (SEPARATE CLASS)
 # ---------------------------------
 class MedicalReport(models.Model):
     appointment = models.OneToOneField(Appointment, on_delete=models.CASCADE, related_name="report")
