@@ -9,7 +9,7 @@ urlpatterns = [
     path("login/", views.login_user),
     path("register/doctor/", views.register_doctor),
 
-    # Availability
+    # Availability (Doctor)
     path("doctor/add-availability/", views.add_availability),
 
     # Appointments
@@ -19,12 +19,7 @@ urlpatterns = [
     # Patient
     path("patient/<str:username>/appointments/", views.patient_appointments),
 
-    # Doctor dashboard
-    path("doctor/<str:username>/appointments/pending/", views.doctor_pending_appointments),
-    path("doctor/<str:username>/appointments/today/", views.doctor_today_appointments),
-    path("doctor/<str:username>/appointments/", views.doctor_all_appointments),
-
-    # Medical reports
+    # Medical Reports
     path("report/create/", views.create_medical_report),
     path("report/<int:appointment_id>/", views.get_medical_report),
     path("report/update/", views.update_medical_report),
