@@ -42,14 +42,12 @@ def register_patient(request):
     if User.objects.filter(username=username).exists():
         return JsonResponse({"error": "Username already exists"}, status=400)
 
-    # Create user
     user = User.objects.create_user(
         username=username,
         password=password,
         role="PATIENT"
     )
 
-    # Create profile
     PatientProfile.objects.create(
         user=user,
         phone_number=phone,
@@ -103,7 +101,7 @@ def register_doctor(request):
     if User.objects.filter(username=username).exists():
         return JsonResponse({"error": "Username already exists"}, status=400)
 
-    user = User.create_user(
+    user = User.objects.create_user(
         username=username,
         password=password,
         role="DOCTOR"
@@ -143,14 +141,14 @@ def add_availability(request):
         doctor=doctor,
         weekday=weekday,
         start_time=start_time,
-        end_time=end_time,
+        end_time=end_time
     )
 
     return JsonResponse({"message": "Availability added!"})
 
 
 # ---------------------------------------------------
-# BOOK APPOINTMENT
+# BOOK APPOINTMENT (with validation)
 # ---------------------------------------------------
 @csrf_exempt
 def book_appointment(request):
@@ -164,42 +162,35 @@ def book_appointment(request):
     start_time = data.get("start_time")
     end_time = data.get("end_time")
 
-    # Convert ISO → datetime
     start_dt = datetime.datetime.fromisoformat(start_time)
     end_dt = datetime.datetime.fromisoformat(end_time)
-
     weekday = start_dt.weekday()
 
-    # Validate patient
+    # Patient
     try:
         patient = User.objects.get(username=patient_username, role="PATIENT").patient_profile
     except User.DoesNotExist:
         return JsonResponse({"error": "Patient not found"}, status=404)
 
-    # Validate doctor
+    # Doctor
     try:
         doctor = User.objects.get(username=doctor_username, role="DOCTOR").doctor_profile
     except User.DoesNotExist:
         return JsonResponse({"error": "Doctor not found"}, status=404)
 
     # A) Check availability
-    availability = Availability.objects.filter(
-        doctor=doctor,
-        weekday=weekday
-    ).first()
+    availability = Availability.objects.filter(doctor=doctor, weekday=weekday).first()
 
     if not availability:
-        return JsonResponse({"error": "Doctor not available on this day"}, status=400)
+        return JsonResponse({"error": "Doctor not available this day"}, status=400)
 
     avail_start = datetime.datetime.combine(start_dt.date(), availability.start_time)
     avail_end = datetime.datetime.combine(start_dt.date(), availability.end_time)
 
     if not (avail_start <= start_dt and end_dt <= avail_end):
-        return JsonResponse({
-            "error": f"Time is outside doctor's availability {availability.start_time}-{availability.end_time}"
-        }, status=400)
+        return JsonResponse({"error": "Time outside doctor's availability"}, status=400)
 
-    # B) Prevent overlapping
+    # B) Prevent overlaps
     overlap = Appointment.objects.filter(
         doctor=doctor,
         start_time__lt=end_dt,
@@ -209,7 +200,6 @@ def book_appointment(request):
     if overlap:
         return JsonResponse({"error": "Doctor already has an appointment in this slot"}, status=400)
 
-    # C) Create appointment
     Appointment.objects.create(
         patient=patient,
         doctor=doctor,
@@ -222,7 +212,7 @@ def book_appointment(request):
 
 
 # ---------------------------------------------------
-# UPDATE STATUS (Doctor/Admin)
+# UPDATE APPOINTMENT STATUS
 # ---------------------------------------------------
 @csrf_exempt
 def update_appointment_status(request):
@@ -241,7 +231,7 @@ def update_appointment_status(request):
     appointment.status = new_status
     appointment.save()
 
-    return JsonResponse({"message": "Appointment updated"})
+    return JsonResponse({"message": "Appointment status updated"})
 
 
 # ---------------------------------------------------
@@ -280,20 +270,22 @@ def doctor_all_appointments(request, username):
 
     appointments = doctor.appointments.all().order_by("start_time")
 
-    return JsonResponse({"appointments": [
-        {
-            "id": a.id,
-            "patient": a.patient.user.username,
-            "start_time": a.start_time,
-            "end_time": a.end_time,
-            "status": a.status
-        }
-        for a in appointments
-    ]})
+    return JsonResponse({
+        "appointments": [
+            {
+                "id": a.id,
+                "patient": a.patient.user.username,
+                "start_time": a.start_time,
+                "end_time": a.end_time,
+                "status": a.status
+            }
+            for a in appointments
+        ]
+    })
 
 
 # ---------------------------------------------------
-# DOCTOR: PENDING ONLY
+# DOCTOR: PENDING APPOINTMENTS
 # ---------------------------------------------------
 def doctor_pending_appointments(request, username):
     try:
@@ -303,16 +295,18 @@ def doctor_pending_appointments(request, username):
 
     appointments = doctor.appointments.filter(status="PENDING")
 
-    return JsonResponse({"appointments": [
-        {
-            "id": a.id,
-            "patient": a.patient.user.username,
-            "start_time": a.start_time,
-            "end_time": a.end_time,
-            "status": a.status
-        }
-        for a in appointments
-    ]})
+    return JsonResponse({
+        "appointments": [
+            {
+                "id": a.id,
+                "patient": a.patient.user.username,
+                "start_time": a.start_time,
+                "end_time": a.end_time,
+                "status": a.status
+            }
+            for a in appointments
+        ]
+    })
 
 
 # ---------------------------------------------------
@@ -327,20 +321,22 @@ def doctor_today_appointments(request, username):
     today = date.today()
     appointments = doctor.appointments.filter(start_time__date=today)
 
-    return JsonResponse({"appointments": [
-        {
-            "id": a.id,
-            "patient": a.patient.user.username,
-            "start_time": a.start_time,
-            "end_time": a.end_time,
-            "status": a.status
-        }
-        for a in appointments
-    ]})
+    return JsonResponse({
+        "appointments": [
+            {
+                "id": a.id,
+                "patient": a.patient.user.username,
+                "start_time": a.start_time,
+                "end_time": a.end_time,
+                "status": a.status
+            }
+            for a in appointments
+        ]
+    })
 
 
 # ---------------------------------------------------
-# DOCTOR: CREATE MEDICAL REPORT
+# CREATE MEDICAL REPORT
 # ---------------------------------------------------
 @csrf_exempt
 def create_medical_report(request):
@@ -359,22 +355,20 @@ def create_medical_report(request):
     except Appointment.DoesNotExist:
         return JsonResponse({"error": "Appointment not found"}, status=404)
 
-    report, created = MedicalReport.objects.get_or_create(
+    if hasattr(appointment, "report"):
+        return JsonResponse({"error": "Report already exists"}, status=400)
+
+    report = MedicalReport.objects.create(
         appointment=appointment,
-        defaults={
-            "diagnosis": diagnosis,
-            "prescription": prescription,
-            "notes": notes
-        }
+        diagnosis=diagnosis,
+        prescription=prescription,
+        notes=notes
     )
 
-    if not created:
-        report.diagnosis = diagnosis
-        report.prescription = prescription
-        report.notes = notes
-        report.save()
-
-    return JsonResponse({"message": "Medical report saved!"})
+    return JsonResponse({
+        "message": "Medical report created!",
+        "report_id": report.id
+    })
 
 
 # ---------------------------------------------------
@@ -384,12 +378,41 @@ def get_medical_report(request, appointment_id):
     try:
         report = MedicalReport.objects.get(appointment_id=appointment_id)
     except MedicalReport.DoesNotExist:
-        return JsonResponse({"error": "No medical report found"}, status=404)
+        return JsonResponse({"error": "Report not found"}, status=404)
+
+    appointment = report.appointment
 
     return JsonResponse({
-        "appointment": appointment_id,
+        "appointment_id": appointment_id,
+        "doctor": appointment.doctor.user.username,
+        "patient": appointment.patient.user.username,
         "diagnosis": report.diagnosis,
         "prescription": report.prescription,
         "notes": report.notes,
         "created_at": report.created_at
     })
+
+
+# ---------------------------------------------------
+# UPDATE MEDICAL REPORT
+# ---------------------------------------------------
+@csrf_exempt
+def update_medical_report(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid request method"}, status=400)
+
+    data = json.loads(request.body)
+
+    report_id = data.get("report_id")
+
+    try:
+        report = MedicalReport.objects.get(id=report_id)
+    except MedicalReport.DoesNotExist:
+        return JsonResponse({"error": "Report not found"}, status=404)
+
+    report.diagnosis = data.get("diagnosis", report.diagnosis)
+    report.prescription = data.get("prescription", report.prescription)
+    report.notes = data.get("notes", report.notes)
+    report.save()
+
+    return JsonResponse({"message": "Medical report updated successfully!"})
