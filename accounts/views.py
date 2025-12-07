@@ -1,14 +1,14 @@
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import get_user_model
-from django.utils.timezone import now
 from datetime import date
-import json
 import datetime
+import json
 
-from rest_framework_simplejwt.authentication import JWTAuthentication
-from rest_framework.decorators import authentication_classes, permission_classes
+# DRF + JWT
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from .models import (
     PatientProfile,
@@ -22,19 +22,19 @@ User = get_user_model()
 
 
 # ---------------------------------------------------
-# TEST FUNCTION
+# TEST
 # ---------------------------------------------------
 def test_api(request):
     return JsonResponse({"message": "API is working!"})
 
 
 # ---------------------------------------------------
-# PATIENT REGISTRATION  (No JWT required)
+# PATIENT REGISTRATION  (PUBLIC)
 # ---------------------------------------------------
 @csrf_exempt
 def register_patient(request):
     if request.method != "POST":
-        return JsonResponse({"error": "Invalid request method"}, status=400)
+        return JsonResponse({"error": "Invalid request"}, status=400)
 
     data = json.loads(request.body)
 
@@ -46,53 +46,19 @@ def register_patient(request):
     if User.objects.filter(username=username).exists():
         return JsonResponse({"error": "Username already exists"}, status=400)
 
-    user = User.objects.create_user(
-        username=username,
-        password=password,
-        role="PATIENT"
-    )
-
-    PatientProfile.objects.create(
-        user=user,
-        phone_number=phone,
-        gender=gender
-    )
+    user = User.objects.create_user(username=username, password=password, role="PATIENT")
+    PatientProfile.objects.create(user=user, phone_number=phone, gender=gender)
 
     return JsonResponse({"message": "Patient registered successfully!"})
 
 
 # ---------------------------------------------------
-# LOGIN (No JWT required)
-# ---------------------------------------------------
-@csrf_exempt
-def login_user(request):
-    if request.method != "POST":
-        return JsonResponse({"error": "Invalid request method"}, status=400)
-
-    data = json.loads(request.body)
-    username = data.get("username")
-    password = data.get("password")
-
-    from django.contrib.auth import authenticate
-    user = authenticate(username=username, password=password)
-
-    if user is None:
-        return JsonResponse({"error": "Invalid username or password"}, status=400)
-
-    return JsonResponse({
-        "message": "Login successful",
-        "username": user.username,
-        "role": user.role
-    })
-
-
-# ---------------------------------------------------
-# DOCTOR REGISTRATION (No JWT required)
+# DOCTOR REGISTRATION (PUBLIC)
 # ---------------------------------------------------
 @csrf_exempt
 def register_doctor(request):
     if request.method != "POST":
-        return JsonResponse({"error": "Invalid request method"}, status=400)
+        return JsonResponse({"error": "Invalid request"}, status=400)
 
     data = json.loads(request.body)
 
@@ -105,12 +71,7 @@ def register_doctor(request):
     if User.objects.filter(username=username).exists():
         return JsonResponse({"error": "Username already exists"}, status=400)
 
-    user = User.objects.create_user(
-        username=username,
-        password=password,
-        role="DOCTOR"
-    )
-
+    user = User.objects.create_user(username=username, password=password, role="DOCTOR")
     DoctorProfile.objects.create(
         user=user,
         specialty=specialty,
@@ -122,51 +83,61 @@ def register_doctor(request):
 
 
 # ---------------------------------------------------
-# ADD DOCTOR AVAILABILITY  (DOCTOR ONLY - JWT Protected)
+# LOGIN (PUBLIC)
 # ---------------------------------------------------
 @csrf_exempt
+def login_user(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "Invalid request"}, status=400)
+
+    data = json.loads(request.body)
+    username = data.get("username")
+    password = data.get("password")
+
+    from django.contrib.auth import authenticate
+    user = authenticate(username=username, password=password)
+
+    if not user:
+        return JsonResponse({"error": "Invalid credentials"}, status=400)
+
+    return JsonResponse({"message": "Login successful", "role": user.role})
+
+
+# ---------------------------------------------------
+# ADD DOCTOR AVAILABILITY  (DOCTOR ONLY)
+# ---------------------------------------------------
+@api_view(['POST'])
 @authentication_classes([JWTAuthentication])
 @permission_classes([IsAuthenticated])
 def add_availability(request):
-    if request.method != "POST":
-        return JsonResponse({"error": "Invalid request method"}, status=400)
 
     if request.user.role != "DOCTOR":
         return JsonResponse({"error": "Only doctors can add availability"}, status=403)
 
-    data = json.loads(request.body)
-
-    weekday = data.get("weekday")
-    start_time = data.get("start_time")
-    end_time = data.get("end_time")
-
-    doctor = request.user.doctor_profile
+    data = request.data
 
     Availability.objects.create(
-        doctor=doctor,
-        weekday=weekday,
-        start_time=start_time,
-        end_time=end_time
+        doctor=request.user.doctor_profile,
+        weekday=data.get("weekday"),
+        start_time=data.get("start_time"),
+        end_time=data.get("end_time")
     )
 
     return JsonResponse({"message": "Availability added!"})
 
 
 # ---------------------------------------------------
-# BOOK APPOINTMENT (PATIENT ONLY - JWT Protected)
+# BOOK APPOINTMENT (PATIENT ONLY)
 # ---------------------------------------------------
-@csrf_exempt
+@api_view(['POST'])
 @authentication_classes([JWTAuthentication])
 @permission_classes([IsAuthenticated])
 def book_appointment(request):
-    if request.method != "POST":
-        return JsonResponse({"error": "Invalid request method"}, status=400)
 
     if request.user.role != "PATIENT":
-        return JsonResponse({"error": "Only patients can book appointments"}, status=403)
+        return JsonResponse({"error": "Only patients can book"}, status=403)
 
-    data = json.loads(request.body)
-
+    data = request.data
     doctor_username = data.get("doctor")
     start_time = data.get("start_time")
     end_time = data.get("end_time")
@@ -182,51 +153,46 @@ def book_appointment(request):
     except User.DoesNotExist:
         return JsonResponse({"error": "Doctor not found"}, status=404)
 
-    # Check availability
     availability = Availability.objects.filter(doctor=doctor, weekday=weekday).first()
     if not availability:
-        return JsonResponse({"error": "Doctor not available this day"}, status=400)
+        return JsonResponse({"error": "Doctor not available on this day"}, status=400)
 
-    # Check time window
     avail_start = datetime.datetime.combine(start_dt.date(), availability.start_time)
     avail_end = datetime.datetime.combine(start_dt.date(), availability.end_time)
-    if not (avail_start <= start_dt <= avail_end and end_dt <= avail_end):
+
+    if start_dt < avail_start or end_dt > avail_end:
         return JsonResponse({"error": "Time outside doctor's availability"}, status=400)
 
-    # Check overlap
     overlap = Appointment.objects.filter(
         doctor=doctor,
         start_time__lt=end_dt,
         end_time__gt=start_dt
     ).exists()
     if overlap:
-        return JsonResponse({"error": "Doctor already has an appointment in this slot"}, status=400)
+        return JsonResponse({"error": "This time is already booked"}, status=400)
 
     Appointment.objects.create(
         patient=patient,
         doctor=doctor,
         start_time=start_dt,
-        end_time=end_dt,
-        status="PENDING"
+        end_time=end_dt
     )
 
-    return JsonResponse({"message": "Appointment booked successfully!"})
+    return JsonResponse({"message": "Appointment booked!"})
 
 
 # ---------------------------------------------------
-# UPDATE APPOINTMENT STATUS (DOCTOR ONLY - JWT Protected)
+# UPDATE APPOINTMENT STATUS (DOCTOR ONLY)
 # ---------------------------------------------------
-@csrf_exempt
+@api_view(['POST'])
 @authentication_classes([JWTAuthentication])
 @permission_classes([IsAuthenticated])
 def update_appointment_status(request):
-    if request.method != "POST":
-        return JsonResponse({"error": "Invalid request"}, status=400)
 
     if request.user.role != "DOCTOR":
         return JsonResponse({"error": "Only doctors can update status"}, status=403)
 
-    data = json.loads(request.body)
+    data = request.data
     appointment_id = data.get("appointment_id")
     new_status = data.get("status")
 
@@ -242,124 +208,17 @@ def update_appointment_status(request):
 
 
 # ---------------------------------------------------
-# PATIENT APPOINTMENTS (JWT Protected)
+# CREATE MEDICAL REPORT (DOCTOR ONLY)
 # ---------------------------------------------------
-@authentication_classes([JWTAuthentication])
-@permission_classes([IsAuthenticated])
-def patient_appointments(request, username):
-    if request.user.role != "PATIENT" or request.user.username != username:
-        return JsonResponse({"error": "Unauthorized"}, status=403)
-
-    patient = request.user.patient_profile
-    appointments = patient.appointments.all().order_by("start_time")
-
-    return JsonResponse({
-        "appointments": [
-            {
-                "id": a.id,
-                "doctor": a.doctor.user.username,
-                "start_time": a.start_time,
-                "end_time": a.end_time,
-                "status": a.status
-            }
-            for a in appointments
-        ]
-    })
-
-
-# ---------------------------------------------------
-# DOCTOR: ALL APPOINTMENTS (JWT Protected)
-# ---------------------------------------------------
-@authentication_classes([JWTAuthentication])
-@permission_classes([IsAuthenticated])
-def doctor_all_appointments(request, username):
-    if request.user.role != "DOCTOR" or request.user.username != username:
-        return JsonResponse({"error": "Unauthorized"}, status=403)
-
-    doctor = request.user.doctor_profile
-    appointments = doctor.appointments.all().order_by("start_time")
-
-    return JsonResponse({
-        "appointments": [
-            {
-                "id": a.id,
-                "patient": a.patient.user.username,
-                "start_time": a.start_time,
-                "end_time": a.end_time,
-                "status": a.status
-            }
-            for a in appointments
-        ]
-    })
-
-
-# ---------------------------------------------------
-# DOCTOR: PENDING APPOINTMENTS (JWT Protected)
-# ---------------------------------------------------
-@authentication_classes([JWTAuthentication])
-@permission_classes([IsAuthenticated])
-def doctor_pending_appointments(request, username):
-    if request.user.role != "DOCTOR" or request.user.username != username:
-        return JsonResponse({"error": "Unauthorized"}, status=403)
-
-    doctor = request.user.doctor_profile
-    appointments = doctor.appointments.filter(status="PENDING")
-
-    return JsonResponse({
-        "appointments": [
-            {
-                "id": a.id,
-                "patient": a.patient.user.username,
-                "start_time": a.start_time,
-                "end_time": a.end_time,
-                "status": a.status
-            }
-            for a in appointments
-        ]
-    })
-
-
-# ---------------------------------------------------
-# DOCTOR: TODAY'S APPOINTMENTS (JWT Protected)
-# ---------------------------------------------------
-@authentication_classes([JWTAuthentication])
-@permission_classes([IsAuthenticated])
-def doctor_today_appointments(request, username):
-    if request.user.role != "DOCTOR" or request.user.username != username:
-        return JsonResponse({"error": "Unauthorized"}, status=403)
-
-    doctor = request.user.doctor_profile
-    today = date.today()
-    appointments = doctor.appointments.filter(start_time__date=today)
-
-    return JsonResponse({
-        "appointments": [
-            {
-                "id": a.id,
-                "patient": a.patient.user.username,
-                "start_time": a.start_time,
-                "end_time": a.end_time,
-                "status": a.status
-            }
-            for a in appointments
-        ]
-    })
-
-
-# ---------------------------------------------------
-# CREATE MEDICAL REPORT (DOCTOR ONLY - JWT Protected)
-# ---------------------------------------------------
-@csrf_exempt
+@api_view(['POST'])
 @authentication_classes([JWTAuthentication])
 @permission_classes([IsAuthenticated])
 def create_medical_report(request):
-    if request.method != "POST":
-        return JsonResponse({"error": "Invalid request method"}, status=400)
 
     if request.user.role != "DOCTOR":
         return JsonResponse({"error": "Only doctors can create reports"}, status=403)
 
-    data = json.loads(request.body)
+    data = request.data
     appointment_id = data.get("appointment_id")
 
     try:
@@ -377,12 +236,13 @@ def create_medical_report(request):
         notes=data.get("notes")
     )
 
-    return JsonResponse({"message": "Medical report created!", "report_id": report.id})
+    return JsonResponse({"message": "Report created", "report_id": report.id})
 
 
 # ---------------------------------------------------
-# GET MEDICAL REPORT (Only patient OR doctor - JWT Protected)
+# GET MEDICAL REPORT (Doctor or Patient)
 # ---------------------------------------------------
+@api_view(['GET'])
 @authentication_classes([JWTAuthentication])
 @permission_classes([IsAuthenticated])
 def get_medical_report(request, appointment_id):
@@ -415,27 +275,25 @@ def get_medical_report(request, appointment_id):
 # ---------------------------------------------------
 # UPDATE MEDICAL REPORT (DOCTOR ONLY)
 # ---------------------------------------------------
-@csrf_exempt
+@api_view(['POST'])
 @authentication_classes([JWTAuthentication])
 @permission_classes([IsAuthenticated])
 def update_medical_report(request):
-    if request.method != "POST":
-        return JsonResponse({"error": "Invalid request method"}, status=400)
 
     if request.user.role != "DOCTOR":
         return JsonResponse({"error": "Only doctors can update reports"}, status=403)
 
-    data = json.loads(request.body)
+    data = request.data
     report_id = data.get("report_id")
 
     try:
         report = MedicalReport.objects.get(id=report_id, appointment__doctor=request.user.doctor_profile)
     except MedicalReport.DoesNotExist:
-        return JsonResponse({"error": "Report not found"}, status=404)
+        return JsonResponse({"error": "Report not found or unauthorized"}, status=404)
 
     report.diagnosis = data.get("diagnosis", report.diagnosis)
     report.prescription = data.get("prescription", report.prescription)
     report.notes = data.get("notes", report.notes)
     report.save()
 
-    return JsonResponse({"message": "Medical report updated successfully!"})
+    return JsonResponse({"message": "Report updated!"})
