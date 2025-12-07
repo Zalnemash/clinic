@@ -15,7 +15,6 @@ DEBUG = True
 # Allow all hosts (Heroku will assign a dynamic hostname)
 ALLOWED_HOSTS = ['*']
 
-
 # STATIC & MEDIA
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
@@ -23,7 +22,6 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
-
 
 # Application definition
 INSTALLED_APPS = [
@@ -42,7 +40,6 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
 ]
 
-
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -53,7 +50,6 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
-
 
 ROOT_URLCONF = 'clinicmanager.urls'
 
@@ -74,14 +70,12 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'clinicmanager.wsgi.application'
 
-
 # Database (Heroku PostgreSQL)
 DATABASES = {
     'default': dj_database_url.config(
         default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}"
     )
 }
-
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -91,17 +85,14 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
-
 # Internationalization
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
 
-
 # Custom user model
 AUTH_USER_MODEL = 'accounts.User'
-
 
 # DRF + JWT authentication
 REST_FRAMEWORK = {
@@ -110,10 +101,10 @@ REST_FRAMEWORK = {
     ),
 }
 
-SSIMPLE_JWT = {
-    # User stays logged in with this token for 7 days
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=7),
-
-    # Refresh token can be used to get new access tokens for 30 days
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
+# -----------------------------------------------------
+# CORRECT JWT SETTINGS (7-day access, 30-day refresh)
+# -----------------------------------------------------
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=7),     # token stays valid for 1 week
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),   # can refresh for 30 days
 }
