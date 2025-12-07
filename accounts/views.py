@@ -206,20 +206,16 @@ def update_appointment_status(request):
 
     return JsonResponse({"message": "Status updated"})
 
+
 # ---------------------------------------------------
 # PATIENT APPOINTMENTS (JWT Protected)
 # ---------------------------------------------------
 @authentication_classes([JWTAuthentication])
 @permission_classes([IsAuthenticated])
 def patient_appointments(request, username):
-    if not request.user.is_authenticated:
-        return JsonResponse({"error": "Unauthorized"}, status=401)
 
-    if not hasattr(request.user, "role") or request.user.role != "PATIENT":
-        return JsonResponse({"error": "Only patients can view their appointments"}, status=403)
-
-    if request.user.username != username:
-        return JsonResponse({"error": "Forbidden"}, status=403)
+    if request.user.role != "PATIENT" or request.user.username != username:
+        return JsonResponse({"error": "Unauthorized"}, status=403)
 
     patient = request.user.patient_profile
     appointments = patient.appointments.all().order_by("start_time")
@@ -236,6 +232,150 @@ def patient_appointments(request, username):
             for a in appointments
         ]
     })
+
+
+# ---------------------------------------------------
+# DOCTOR: ALL APPOINTMENTS
+# ---------------------------------------------------
+@api_view(['GET'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def doctor_all_appointments(request, username):
+
+    if request.user.role != "DOCTOR" or request.user.username != username:
+        return JsonResponse({"error": "Unauthorized"}, status=403)
+
+    doctor = request.user.doctor_profile
+    appointments = doctor.appointments.all().order_by("start_time")
+
+    return JsonResponse({
+        "appointments": [
+            {
+                "id": a.id,
+                "patient": a.patient.user.username,
+                "start_time": a.start_time,
+                "end_time": a.end_time,
+                "status": a.status
+            }
+            for a in appointments
+        ]
+    })
+
+
+# ---------------------------------------------------
+# DOCTOR: PENDING APPOINTMENTS
+# ---------------------------------------------------
+@api_view(['GET'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def doctor_pending_appointments(request, username):
+
+    if request.user.role != "DOCTOR" or request.user.username != username:
+        return JsonResponse({"error": "Unauthorized"}, status=403)
+
+    doctor = request.user.doctor_profile
+    appointments = doctor.appointments.filter(status="PENDING")
+
+    return JsonResponse({
+        "appointments": [
+            {
+                "id": a.id,
+                "patient": a.patient.user.username,
+                "start_time": a.start_time,
+                "end_time": a.end_time,
+                "status": a.status
+            }
+            for a in appointments
+        ]
+    })
+
+
+# ---------------------------------------------------
+# DOCTOR: TODAY'S APPOINTMENTS
+# ---------------------------------------------------
+@api_view(['GET'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def doctor_today_appointments(request, username):
+
+    if request.user.role != "DOCTOR" or request.user.username != username:
+        return JsonResponse({"error": "Unauthorized"}, status=403)
+
+    doctor = request.user.doctor_profile
+    today = date.today()
+    appointments = doctor.appointments.filter(start_time__date=today)
+
+    return JsonResponse({
+        "appointments": [
+            {
+                "id": a.id,
+                "patient": a.patient.user.username,
+                "start_time": a.start_time,
+                "end_time": a.end_time,
+                "status": a.status
+            }
+            for a in appointments
+        ]
+    })
+
+
+# ---------------------------------------------------
+# DOCTOR CALENDAR (Available Slots for Given Date)
+# ---------------------------------------------------
+@api_view(['GET'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def doctor_calendar(request, username):
+
+    try:
+        doctor = User.objects.get(username=username, role="DOCTOR").doctor_profile
+    except User.DoesNotExist:
+        return JsonResponse({"error": "Doctor not found"}, status=404)
+
+    date_str = request.GET.get("date")
+    if not date_str:
+        return JsonResponse({"error": "Missing 'date' (YYYY-MM-DD)"}, status=400)
+
+    try:
+        date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
+    except ValueError:
+        return JsonResponse({"error": "Invalid date format"}, status=400)
+
+    weekday = date_obj.weekday()
+
+    availability = Availability.objects.filter(doctor=doctor, weekday=weekday).first()
+    if not availability:
+        return JsonResponse({"available_slots": []})
+
+    start_dt = datetime.datetime.combine(date_obj, availability.start_time)
+    end_dt = datetime.datetime.combine(date_obj, availability.end_time)
+
+    taken = Appointment.objects.filter(
+        doctor=doctor,
+        start_time__date=date_obj
+    )
+
+    taken_slots = [(a.start_time, a.end_time) for a in taken]
+
+    slots = []
+    current = start_dt
+    while current < end_dt:
+        slot_end = current + datetime.timedelta(minutes=30)
+
+        conflict = any(
+            t_start < slot_end and t_end > current
+            for t_start, t_end in taken_slots
+        )
+
+        if not conflict:
+            slots.append({
+                "start": current.isoformat(),
+                "end": slot_end.isoformat()
+            })
+
+        current = slot_end
+
+    return JsonResponse({"available_slots": slots})
 
 
 # ---------------------------------------------------
@@ -285,7 +425,6 @@ def get_medical_report(request, appointment_id):
 
     appointment = report.appointment
 
-    # Access rules
     if request.user.role == "PATIENT" and request.user != appointment.patient.user:
         return JsonResponse({"error": "Not allowed"}, status=403)
 
