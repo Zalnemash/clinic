@@ -206,6 +206,37 @@ def update_appointment_status(request):
 
     return JsonResponse({"message": "Status updated"})
 
+# ---------------------------------------------------
+# PATIENT APPOINTMENTS (JWT Protected)
+# ---------------------------------------------------
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def patient_appointments(request, username):
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Unauthorized"}, status=401)
+
+    if not hasattr(request.user, "role") or request.user.role != "PATIENT":
+        return JsonResponse({"error": "Only patients can view their appointments"}, status=403)
+
+    if request.user.username != username:
+        return JsonResponse({"error": "Forbidden"}, status=403)
+
+    patient = request.user.patient_profile
+    appointments = patient.appointments.all().order_by("start_time")
+
+    return JsonResponse({
+        "appointments": [
+            {
+                "id": a.id,
+                "doctor": a.doctor.user.username,
+                "start_time": a.start_time,
+                "end_time": a.end_time,
+                "status": a.status
+            }
+            for a in appointments
+        ]
+    })
+
 
 # ---------------------------------------------------
 # CREATE MEDICAL REPORT (DOCTOR ONLY)
