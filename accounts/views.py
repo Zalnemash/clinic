@@ -4,6 +4,7 @@ from django.contrib.auth import get_user_model
 from django.utils.timezone import now
 from datetime import date
 import json
+import datetime
 
 User = get_user_model()
 
@@ -144,7 +145,7 @@ def add_availability(request):
 
 
 # ---------------------------------------------------
-# BOOK APPOINTMENT
+# BOOK APPOINTMENT  (FIXED — one csrf_exempt only)
 # ---------------------------------------------------
 @csrf_exempt
 def book_appointment(request):
@@ -156,30 +157,60 @@ def book_appointment(request):
         start_time = data.get("start_time")
         end_time = data.get("end_time")
 
-        # Patient
+        # Convert ISO strings → datetime objects
+        start_dt = datetime.datetime.fromisoformat(start_time)
+        end_dt = datetime.datetime.fromisoformat(end_time)
+
+        weekday = start_dt.strftime("%A")
+
+        # Get patient
         try:
-            patient_user = User.objects.get(username=patient_username, role="PATIENT")
-            patient_profile = patient_user.patient_profile
+            patient = User.objects.get(username=patient_username, role="PATIENT").patient_profile
         except User.DoesNotExist:
             return JsonResponse({"error": "Patient not found"}, status=404)
 
-        # Doctor
+        # Get doctor
         try:
-            doctor_user = User.objects.get(username=doctor_username, role="DOCTOR")
-            doctor_profile = doctor_user.doctor_profile
+            doctor = User.objects.get(username=doctor_username, role="DOCTOR").doctor_profile
         except User.DoesNotExist:
             return JsonResponse({"error": "Doctor not found"}, status=404)
 
-        from .models import Appointment
+        from .models import Appointment, Availability
+
+        # A) Check doctor availability
+        availability = Availability.objects.filter(doctor=doctor, weekday=weekday).first()
+
+        if not availability:
+            return JsonResponse({"error": f"Doctor not available on {weekday}"}, status=400)
+
+        avail_start = datetime.datetime.combine(start_dt.date(), availability.start_time)
+        avail_end = datetime.datetime.combine(start_dt.date(), availability.end_time)
+
+        if not (avail_start <= start_dt and end_dt <= avail_end):
+            return JsonResponse({
+                "error": f"Appointment outside availability ({availability.start_time}–{availability.end_time})"
+            }, status=400)
+
+        # B) Check overlapping appointments
+        overlapping = Appointment.objects.filter(
+            doctor=doctor,
+            start_time__lt=end_dt,
+            end_time__gt=start_dt
+        ).exists()
+
+        if overlapping:
+            return JsonResponse({"error": "Doctor already has an appointment at this time"}, status=400)
+
+        # C) Create appointment
         Appointment.objects.create(
-            patient=patient_profile,
-            doctor=doctor_profile,
-            start_time=start_time,
-            end_time=end_time,
+            patient=patient,
+            doctor=doctor,
+            start_time=start_dt,
+            end_time=end_dt,
             status="PENDING"
         )
 
-        return JsonResponse({"message": "Appointment booked!"})
+        return JsonResponse({"message": "Appointment booked successfully!"})
 
     return JsonResponse({"error": "Invalid request method"}, status=400)
 
@@ -205,16 +236,13 @@ def update_appointment_status(request):
         appointment.status = new_status
         appointment.save()
 
-        return JsonResponse({
-            "message": "Appointment status updated!",
-            "appointment": str(appointment)
-        })
+        return JsonResponse({"message": "Appointment status updated!"})
 
     return JsonResponse({"error": "Invalid request method"}, status=400)
 
 
 # ---------------------------------------------------
-# PATIENT APPOINTMENTS
+# PATIENT APPOINTMENTS LIST
 # ---------------------------------------------------
 def patient_appointments(request, username):
     try:
@@ -294,7 +322,7 @@ def doctor_pending_appointments(request, username):
 
 
 # ---------------------------------------------------
-# DOCTOR DASHBOARD — TODAY'S APPOINTMENTS
+# DOCTOR DASHBOARD — TODAY ONLY
 # ---------------------------------------------------
 @csrf_exempt
 def doctor_today_appointments(request, username):
@@ -325,7 +353,7 @@ def doctor_today_appointments(request, username):
 
 
 # ---------------------------------------------------
-# DOCTOR COMPLETES APPOINTMENT
+# MARK APPOINTMENT COMPLETED
 # ---------------------------------------------------
 @csrf_exempt
 def doctor_complete_appointment(request):
