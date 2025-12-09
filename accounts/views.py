@@ -75,11 +75,6 @@ def logout_view(request):
 
 
 def register_patient_view(request):
-    """
-    Replaces /register/patient/ API.
-    GET: show registration form.
-    POST: create User + PatientProfile, log in, redirect.
-    """
     if request.method == "POST":
         username = request.POST.get("username")
         password = request.POST.get("password")
@@ -110,11 +105,6 @@ def register_patient_view(request):
 
 
 def register_doctor_view(request):
-    """
-    Replaces /register/doctor/ API.
-    GET: show form.
-    POST: create User + DoctorProfile.
-    """
     if request.method == "POST":
         username = request.POST.get("username")
         password = request.POST.get("password")
@@ -151,19 +141,13 @@ def register_doctor_view(request):
 # ---------------------------------------------------
 @login_required
 def add_availability_view(request):
-    """
-    Replaces add_availability API.
-    Only doctors can access.
-    GET: show form.
-    POST: create availability record.
-    """
     if getattr(request.user, "role", None) != "DOCTOR":
         messages.error(request, "Only doctors can add availability.")
         return redirect("home")
 
     if request.method == "POST":
-        weekday = int(request.POST.get("weekday"))  # 0=Mon ... 6=Sun
-        start_time_str = request.POST.get("start_time")  # "HH:MM"
+        weekday = int(request.POST.get("weekday"))
+        start_time_str = request.POST.get("start_time")
         end_time_str = request.POST.get("end_time")
 
         try:
@@ -185,18 +169,13 @@ def add_availability_view(request):
 
 
 # ---------------------------------------------------
-# DOCTOR CALENDAR – AVAILABLE SLOTS FOR GIVEN DATE
+# DOCTOR CALENDAR
 # ---------------------------------------------------
 @login_required
 def doctor_calendar_view(request, username):
-    """
-    Replaces doctor_calendar API.
-    Shows a list of free 30-minute slots for a chosen date.
-    """
     doctor_user = get_object_or_404(User, username=username, role="DOCTOR")
     doctor = doctor_user.doctor_profile
 
-    # date passed as ?date=YYYY-MM-DD (default: today)
     date_str = request.GET.get("date")
     if not date_str:
         date_obj = date.today()
@@ -231,33 +210,22 @@ def doctor_calendar_view(request, username):
             )
 
             if not conflict:
-                available_slots.append(
-                    {
-                        "start": current,
-                        "end": slot_end,
-                    }
-                )
+                available_slots.append({"start": current, "end": slot_end})
 
             current = slot_end
 
-    context = {
+    return render(request, "accounts/doctor_calendar.html", {
         "doctor": doctor,
         "date": date_obj,
         "available_slots": available_slots,
-    }
-    return render(request, "accounts/doctor_calendar.html", context)
+    })
 
 
 # ---------------------------------------------------
-# BOOK APPOINTMENT (PATIENT)
+# BOOK APPOINTMENT
 # ---------------------------------------------------
 @login_required
 def book_appointment_view(request):
-    """
-    Replaces book_appointment API.
-    GET: show booking form.
-    POST: validate slot and create Appointment.
-    """
     if getattr(request.user, "role", None) != "PATIENT":
         messages.error(request, "Only patients can book appointments.")
         return redirect("home")
@@ -266,7 +234,7 @@ def book_appointment_view(request):
 
     if request.method == "POST":
         doctor_username = request.POST.get("doctor")
-        start_time_str = request.POST.get("start_time")  # ISO: "YYYY-MM-DDTHH:MM"
+        start_time_str = request.POST.get("start_time")
         end_time_str = request.POST.get("end_time")
 
         try:
@@ -285,6 +253,7 @@ def book_appointment_view(request):
 
         weekday = start_dt.weekday()
         availability = Availability.objects.filter(doctor=doctor, weekday=weekday).first()
+
         if not availability:
             messages.error(request, "Doctor is not available on this day.")
             return render(request, "accounts/book_appointment.html", {"doctors": doctors})
@@ -311,6 +280,7 @@ def book_appointment_view(request):
             start_time=start_dt,
             end_time=end_dt
         )
+
         messages.success(request, "Appointment booked successfully.")
         return redirect("patient_appointments")
 
@@ -318,14 +288,10 @@ def book_appointment_view(request):
 
 
 # ---------------------------------------------------
-# UPDATE APPOINTMENT STATUS (DOCTOR)
+# UPDATE APPOINTMENT STATUS
 # ---------------------------------------------------
 @login_required
 def update_appointment_status_view(request, appointment_id):
-    """
-    Replaces update_appointment_status API.
-    Doctor chooses new status via form (e.g. PENDING / CONFIRMED / CANCELED).
-    """
     if getattr(request.user, "role", None) != "DOCTOR":
         messages.error(request, "Only doctors can update appointment status.")
         return redirect("home")
@@ -352,9 +318,6 @@ def update_appointment_status_view(request, appointment_id):
 # ---------------------------------------------------
 @login_required
 def patient_appointments_view(request):
-    """
-    Replaces patient_appointments API but uses logged-in user instead of URL username.
-    """
     if getattr(request.user, "role", None) != "PATIENT":
         messages.error(request, "Unauthorized.")
         return redirect("home")
@@ -362,9 +325,7 @@ def patient_appointments_view(request):
     patient = request.user.patient_profile
     appointments = patient.appointments.select_related("doctor__user").order_by("start_time")
 
-    return render(request, "accounts/patient_appointments.html", {
-        "appointments": appointments
-    })
+    return render(request, "accounts/patient_appointments.html", {"appointments": appointments})
 
 
 # ---------------------------------------------------
@@ -379,9 +340,7 @@ def doctor_all_appointments_view(request):
     doctor = request.user.doctor_profile
     appointments = doctor.appointments.select_related("patient__user").order_by("start_time")
 
-    return render(request, "accounts/doctor_appointments.html", {
-        "appointments": appointments
-    })
+    return render(request, "accounts/doctor_appointments.html", {"appointments": appointments})
 
 
 @login_required
@@ -393,9 +352,7 @@ def doctor_pending_appointments_view(request):
     doctor = request.user.doctor_profile
     appointments = doctor.appointments.select_related("patient__user").filter(status="PENDING")
 
-    return render(request, "accounts/doctor_pending_appointments.html", {
-        "appointments": appointments
-    })
+    return render(request, "accounts/doctor_pending_appointments.html", {"appointments": appointments})
 
 
 @login_required
@@ -417,14 +374,10 @@ def doctor_today_appointments_view(request):
 
 
 # ---------------------------------------------------
-# UPCOMING APPOINTMENTS (REMINDERS)
+# UPCOMING APPOINTMENTS
 # ---------------------------------------------------
 @login_required
 def upcoming_appointments_view(request):
-    """
-    Replaces upcoming_appointments API.
-    Shows appointments in the next 24 hours for patient/doctor.
-    """
     now = datetime.datetime.now()
     tomorrow = now + datetime.timedelta(hours=24)
 
@@ -436,6 +389,7 @@ def upcoming_appointments_view(request):
             start_time__gte=now,
             start_time__lte=tomorrow
         ).order_by("start_time")
+
     elif role == "DOCTOR":
         appointments = Appointment.objects.filter(
             doctor=request.user.doctor_profile,
@@ -458,12 +412,6 @@ def upcoming_appointments_view(request):
 # ---------------------------------------------------
 @login_required
 def create_medical_report_view(request, appointment_id):
-    """
-    Replaces create_medical_report API.
-    Only doctor for that appointment can create the report.
-    GET: show form.
-    POST: create report.
-    """
     if getattr(request.user, "role", None) != "DOCTOR":
         messages.error(request, "Only doctors can create reports.")
         return redirect("home")
@@ -483,49 +431,42 @@ def create_medical_report_view(request, appointment_id):
         prescription = request.POST.get("prescription")
         notes = request.POST.get("notes")
 
-        report = MedicalReport.objects.create(
+        MedicalReport.objects.create(
             appointment=appointment,
             diagnosis=diagnosis,
             prescription=prescription,
             notes=notes
         )
+
         messages.success(request, "Report created.")
         return redirect("get_medical_report", appointment_id=appointment_id)
 
-    return render(request, "accounts/create_medical_report.html", {
-        "appointment": appointment
-    })
+    return render(request, "accounts/create_medical_report.html", {"appointment": appointment})
 
-
-from django.http import Http404
 
 @login_required
 def get_medical_report_view(request, appointment_id):
-    # First get the appointment itself
     appointment = get_object_or_404(Appointment, id=appointment_id)
 
-    # Permission check: only that doctor / patient
     role = getattr(request.user, "role", None)
     if role == "PATIENT" and request.user != appointment.patient.user:
         messages.error(request, "You are not allowed to view this report.")
         return redirect("home")
+
     if role == "DOCTOR" and request.user != appointment.doctor.user:
         messages.error(request, "You are not allowed to view this report.")
         return redirect("home")
 
-    # Try to get report
     try:
         report = appointment.report
     except MedicalReport.DoesNotExist:
-        # No report exists yet
         if role == "DOCTOR":
-            messages.info(request, "No report exists for this appointment yet. Create one now.")
+            messages.info(request, "No report exists yet. Create one now.")
             return redirect("create_medical_report", appointment_id=appointment_id)
         else:
-            messages.info(request, "No report has been created yet for this appointment.")
+            messages.info(request, "No report has been created yet.")
             return redirect("patient_appointments")
 
-    # If report exists, render as usual
     return render(request, "accounts/medical_report.html", {
         "appointment": appointment,
         "report": report,
@@ -534,10 +475,6 @@ def get_medical_report_view(request, appointment_id):
 
 @login_required
 def update_medical_report_view(request, report_id):
-    """
-    Replaces update_medical_report API.
-    Only the doctor of that appointment can edit.
-    """
     if getattr(request.user, "role", None) != "DOCTOR":
         messages.error(request, "Only doctors can update reports.")
         return redirect("home")
@@ -553,6 +490,7 @@ def update_medical_report_view(request, report_id):
         report.prescription = request.POST.get("prescription", report.prescription)
         report.notes = request.POST.get("notes", report.notes)
         report.save()
+
         messages.success(request, "Report updated.")
         return redirect("get_medical_report", appointment_id=report.appointment_id)
 
@@ -560,12 +498,17 @@ def update_medical_report_view(request, report_id):
         "report": report,
         "appointment": report.appointment,
     })
+
+
+# ---------------------------------------------------
+# API ENDPOINTS (FIXED)
+# ---------------------------------------------------
 @api_view(['GET'])
 @authentication_classes([JWTAuthentication])
 @permission_classes([IsAuthenticated])
 def doctor_available_dates(request, username):
     """
-    Returns dates within the next 14 days where the doctor has availability.
+    Return available dates for next 14 days.
     """
     try:
         doctor = User.objects.get(username=username, role="DOCTOR").doctor_profile
@@ -576,35 +519,31 @@ def doctor_available_dates(request, username):
     end_date = today + datetime.timedelta(days=14)
 
     available_days = set(
-        Availability.objects.filter(doctor=doctor)
-        .values_list("weekday", flat=True)
+        Availability.objects.filter(doctor=doctor).values_list("weekday", flat=True)
     )
 
     result = []
     current = today
-
     while current <= end_date:
         if current.weekday() in available_days:
             result.append(current.isoformat())
         current += datetime.timedelta(days=1)
 
     return JsonResponse({"available_dates": result})
+
+
 @api_view(['GET'])
 @authentication_classes([JWTAuthentication])
 @permission_classes([IsAuthenticated])
 def doctor_available_slots(request, username):
     """
-    Returns available 15-minute slots for a specific date.
+    Return available 15-minute slots for the selected date.
     """
-    import datetime
-
-    # Find doctor
     try:
         doctor = User.objects.get(username=username, role="DOCTOR").doctor_profile
     except User.DoesNotExist:
         return JsonResponse({"error": "Doctor not found"}, status=404)
 
-    # Get date
     date_str = request.GET.get("date")
     if not date_str:
         return JsonResponse({"error": "Date is required"}, status=400)
@@ -616,24 +555,14 @@ def doctor_available_slots(request, username):
 
     weekday = date_obj.weekday()
 
-    # Check availability
-    availability = Availability.objects.filter(
-        doctor=doctor,
-        weekday=weekday
-    ).first()
-
+    availability = Availability.objects.filter(doctor=doctor, weekday=weekday).first()
     if not availability:
         return JsonResponse({"slots": []})
 
-    # Generate 15-min slots
     start_dt = datetime.datetime.combine(date_obj, availability.start_time)
     end_dt = datetime.datetime.combine(date_obj, availability.end_time)
 
-    # Appointments already taken
-    taken = Appointment.objects.filter(
-        doctor=doctor,
-        start_time__date=date_obj
-    )
+    taken = Appointment.objects.filter(doctor=doctor, start_time__date=date_obj)
     taken_slots = [(a.start_time, a.end_time) for a in taken]
 
     slots = []
@@ -648,11 +577,10 @@ def doctor_available_slots(request, username):
         )
 
         if not overlap:
-            label = f"{current.time().strftime('%H:%M')} - {slot_end.time().strftime('%H:%M')}"
             slots.append({
                 "start": current.isoformat(),
                 "end": slot_end.isoformat(),
-                "label": label
+                "label": f"{current.strftime('%H:%M')} - {slot_end.strftime('%H:%M')}"
             })
 
         current = slot_end

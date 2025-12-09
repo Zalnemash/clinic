@@ -36,14 +36,18 @@
 
 <script>
 /* =======================================================
-   HELPER — GET JWT TOKEN STORED IN SESSION BY LOGIN VIEW
+   HELPER — JWT Token loaded from Django session
    ======================================================= */
 const ACCESS_TOKEN = window.JWT_ACCESS || "";
 
+if (!ACCESS_TOKEN) {
+    console.warn("⚠ No JWT token found — API calls will fail with 401");
+}
 
-// ---------------------------------------------
-// LOAD AVAILABLE DATES WHEN DOCTOR IS SELECTED
-// ---------------------------------------------
+
+/* =======================================================
+   Load available dates for selected doctor
+   ======================================================= */
 document.getElementById("doctor").addEventListener("change", async function () {
     const doc = this.value;
     const dateSelect = document.getElementById("date");
@@ -54,30 +58,40 @@ document.getElementById("doctor").addEventListener("change", async function () {
 
     if (!doc) return;
 
-    const response = await fetch(`/api/doctor/${doc}/available-dates/`, {
-        headers: {
-            "Authorization": "Bearer " + ACCESS_TOKEN
+    try {
+        const response = await fetch(`/api/doctor/${doc}/available-dates/`, {
+            headers: {
+                "Authorization": "Bearer " + ACCESS_TOKEN
+            }
+        });
+
+        if (!response.ok) {
+            dateSelect.innerHTML = "<option>Unauthorized (401)</option>";
+            return;
         }
-    });
 
-    const data = await response.json();
+        const data = await response.json();
 
-    if (!data.available_dates) {
+        if (!data.available_dates) {
+            dateSelect.innerHTML = "<option>No dates available</option>";
+            return;
+        }
+
+        dateSelect.innerHTML = '<option value="">-- Select Date --</option>';
+        data.available_dates.forEach(d => {
+            dateSelect.innerHTML += `<option value="${d}">${d}</option>`;
+        });
+
+    } catch (err) {
+        console.error(err);
         dateSelect.innerHTML = "<option>Error loading dates</option>";
-        return;
     }
-
-    dateSelect.innerHTML = '<option value="">-- Select Date --</option>';
-
-    data.available_dates.forEach(d => {
-        dateSelect.innerHTML += `<option value="${d}">${d}</option>`;
-    });
 });
 
 
-// ---------------------------------------------
-// LOAD TIME SLOTS WHEN DATE IS SELECTED
-// ---------------------------------------------
+/* =======================================================
+   Load time slots when a date is selected
+   ======================================================= */
 document.getElementById("date").addEventListener("change", async function () {
     const doc = document.getElementById("doctor").value;
     const date = this.value;
@@ -85,43 +99,56 @@ document.getElementById("date").addEventListener("change", async function () {
 
     timeSelect.innerHTML = "<option>Loading...</option>";
 
-    if (!date) return;
+    if (!doc || !date) return;
 
-    const response = await fetch(`/api/doctor/${doc}/available-slots/?date=${date}`, {
-        headers: {
-            "Authorization": "Bearer " + ACCESS_TOKEN
+    try {
+        const response = await fetch(`/api/doctor/${doc}/available-slots/?date=${date}`, {
+            headers: {
+                "Authorization": "Bearer " + ACCESS_TOKEN
+            }
+        });
+
+        if (!response.ok) {
+            timeSelect.innerHTML = "<option>Unauthorized (401)</option>";
+            return;
         }
-    });
 
-    const data = await response.json();
+        const data = await response.json();
 
-    if (!data.slots || data.slots.length === 0) {
-        timeSelect.innerHTML = "<option>No slots available</option>";
-        return;
+        if (!data.slots || data.slots.length === 0) {
+            timeSelect.innerHTML = "<option>No available slots</option>";
+            return;
+        }
+
+        timeSelect.innerHTML = `<option value="">-- Select Time --</option>`;
+
+        data.slots.forEach(slot => {
+            timeSelect.innerHTML += `
+                <option value="${slot.start}" data-end="${slot.end}">
+                    ${slot.label}
+                </option>
+            `;
+        });
+
+    } catch (err) {
+        console.error(err);
+        timeSelect.innerHTML = "<option>Error loading slots</option>";
     }
-
-    timeSelect.innerHTML = `<option value="">-- Select Time --</option>`;
-
-    data.slots.forEach(slot => {
-        timeSelect.innerHTML += `
-            <option value="${slot.start}" data-end="${slot.end}">
-                ${slot.label}
-            </option>
-        `;
-    });
 });
 
-// ---------------------------------------------
-// ON SUBMIT — AUTO-GENERATE END TIME
-// ---------------------------------------------
+
+/* =======================================================
+   Auto-generate hidden start/end time before submission
+   ======================================================= */
 document.getElementById("bookingForm").addEventListener("submit", function () {
     const timeSelect = document.getElementById("time");
     const selectedOption = timeSelect.options[timeSelect.selectedIndex];
 
+    if (!selectedOption) return;
+
     const start = selectedOption.value;
     const end = selectedOption.getAttribute("data-end");
 
-    // Inject hidden inputs
     this.insertAdjacentHTML("beforeend", `
         <input type="hidden" name="start_time" value="${start}">
         <input type="hidden" name="end_time" value="${end}">
