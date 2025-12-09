@@ -1,56 +1,28 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Clinic Appointment Manager</title>
+{% extends "accounts/base.html" %}
 
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 40px;
-            background: #f5f6fa;
-            text-align: center;
-        }
-        h1 {
-            color: #2c3e50;
-            margin-bottom: 40px;
-        }
-        .btn {
-            display: inline-block;
-            padding: 12px 20px;
-            background: #3498db;
-            color: white;
-            text-decoration: none;
-            font-size: 18px;
-            border-radius: 8px;
-            margin: 10px;
-        }
-        .btn:hover {
-            background: #2980b9;
-        }
-        .admin-btn {
-            background: #27ae60;
-        }
-        .admin-btn:hover {
-            background: #1e8449;
-        }
-    </style>
-</head>
+{% block title %}Home - Clinic{% endblock %}
 
-<body>
+{% block content %}
+<div class="mt-4">
+  <h1>Clinic System</h1>
+  {% if user.is_authenticated %}
+    <p class="lead">Welcome, {{ user.username }} ({{ user.role }}).</p>
 
-<h1>Clinic Appointment Manager</h1>
+    {% if role == "PATIENT" %}
+      <p>You can book appointments and view your upcoming visits.</p>
+      <a class="btn btn-primary" href="{% url 'book_appointment' %}">Book an Appointment</a>
+      <a class="btn btn-outline-secondary" href="{% url 'patient_appointments' %}">My Appointments</a>
+    {% elif role == "DOCTOR" %}
+      <p>You can manage your availability and patients’ appointments.</p>
+      <a class="btn btn-primary" href="{% url 'doctor_all_appointments' %}">View All Appointments</a>
+      <a class="btn btn-outline-secondary" href="{% url 'add_availability' %}">Set Availability</a>
+    {% endif %}
 
-<a class="btn" href="/api/web/login/">Login Page</a>
-<br>
-
-<a class="btn" href="/api/web/doctor/calendar/">Doctor Calendar</a>
-<br>
-
-<a class="btn admin-btn" href="/admin/">Admin Panel</a>
-<br>
-
-<a class="btn" href="/api/test/">API Test</a>
-
-</body>
-</html>
+  {% else %}
+    <p class="lead">Please login or create an account to continue.</p>
+    <a class="btn btn-primary me-2" href="{% url 'login' %}">Login</a>
+    <a class="btn btn-outline-success me-2" href="{% url 'register_patient' %}">Register as Patient</a>
+    <a class="btn btn-outline-info" href="{% url 'register_doctor' %}">Register as Doctor</a>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,15 +1,11 @@
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.contrib.auth import get_user_model
 from datetime import date
 import datetime
-import json
 
-# DRF + JWT
-from rest_framework.decorators import api_view, authentication_classes, permission_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework_simplejwt.authentication import JWTAuthentication
-from django.shortcuts import render
+from django.contrib import messages
+from django.contrib.auth import authenticate, login, logout, get_user_model
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import render, redirect, get_object_or_404
+
 from .models import (
     PatientProfile,
     DoctorProfile,
@@ -22,550 +18,532 @@ User = get_user_model()
 
 
 # ---------------------------------------------------
-# TEST
+# HOME
 # ---------------------------------------------------
-def test_api(request):
-    return JsonResponse({"message": "API is working!"})
-
-
-# ---------------------------------------------------
-# PATIENT REGISTRATION  (PUBLIC)
-# ---------------------------------------------------
-@csrf_exempt
-def register_patient(request):
-    if request.method != "POST":
-        return JsonResponse({"error": "Invalid request"}, status=400)
-
-    data = json.loads(request.body)
-
-    username = data.get("username")
-    password = data.get("password")
-    phone = data.get("phone")
-    gender = data.get("gender")
-
-    if User.objects.filter(username=username).exists():
-        return JsonResponse({"error": "Username already exists"}, status=400)
-
-    user = User.objects.create_user(username=username, password=password, role="PATIENT")
-    PatientProfile.objects.create(user=user, phone_number=phone, gender=gender)
-
-    return JsonResponse({"message": "Patient registered successfully!"})
+def home_page(request):
+    """
+    Simple landing / dashboard.
+    You can customize to show different content based on user role.
+    """
+    context = {}
+    if request.user.is_authenticated:
+        context["role"] = getattr(request.user, "role", None)
+    return render(request, "accounts/home.html", context)
 
 
 # ---------------------------------------------------
-# DOCTOR REGISTRATION (PUBLIC)
+# AUTH VIEWS
 # ---------------------------------------------------
-@csrf_exempt
-def register_doctor(request):
-    if request.method != "POST":
-        return JsonResponse({"error": "Invalid request"}, status=400)
+def login_view(request):
+    """
+    Replaces login_user API.
+    GET: show login form.
+    POST: authenticate and log in, then redirect to home.
+    """
+    if request.method == "POST":
+        username = request.POST.get("username")
+        password = request.POST.get("password")
+
+        user = authenticate(request, username=username, password=password)
+        if user is None:
+            messages.error(request, "Invalid username or password.")
+        else:
+            login(request, user)
+            messages.success(request, f"Welcome back, {user.username}!")
+            return redirect("home")
 
-    data = json.loads(request.body)
-
-    username = data.get("username")
-    password = data.get("password")
-    specialty = data.get("specialty")
-    clinic_room = data.get("clinic_room")
-    bio = data.get("bio")
-
-    if User.objects.filter(username=username).exists():
-        return JsonResponse({"error": "Username already exists"}, status=400)
-
-    user = User.objects.create_user(username=username, password=password, role="DOCTOR")
-    DoctorProfile.objects.create(
-        user=user,
-        specialty=specialty,
-        clinic_room=clinic_room,
-        bio=bio
-    )
-
-    return JsonResponse({"message": "Doctor registered successfully!"})
-
-
-# ---------------------------------------------------
-# LOGIN (PUBLIC)
-# ---------------------------------------------------
-@csrf_exempt
-def login_user(request):
-    if request.method != "POST":
-        return JsonResponse({"error": "Invalid request"}, status=400)
-
-    data = json.loads(request.body)
-    username = data.get("username")
-    password = data.get("password")
-
-    from django.contrib.auth import authenticate
-    user = authenticate(username=username, password=password)
-
-    if not user:
-        return JsonResponse({"error": "Invalid credentials"}, status=400)
-
-    return JsonResponse({"message": "Login successful", "role": user.role})
-
-
-# ---------------------------------------------------
-# ADD DOCTOR AVAILABILITY  (DOCTOR ONLY)
-# ---------------------------------------------------
-@api_view(['POST'])
-@authentication_classes([JWTAuthentication])
-@permission_classes([IsAuthenticated])
-def add_availability(request):
-
-    if request.user.role != "DOCTOR":
-        return JsonResponse({"error": "Only doctors can add availability"}, status=403)
-
-    data = request.data
-
-    Availability.objects.create(
-        doctor=request.user.doctor_profile,
-        weekday=data.get("weekday"),
-        start_time=data.get("start_time"),
-        end_time=data.get("end_time")
-    )
-
-    return JsonResponse({"message": "Availability added!"})
-
-
-# ---------------------------------------------------
-# BOOK APPOINTMENT (PATIENT ONLY)
-# ---------------------------------------------------
-@api_view(['POST'])
-@authentication_classes([JWTAuthentication])
-@permission_classes([IsAuthenticated])
-def book_appointment(request):
-
-    if request.user.role != "PATIENT":
-        return JsonResponse({"error": "Only patients can book"}, status=403)
-
-    data = request.data
-    doctor_username = data.get("doctor")
-    start_time = data.get("start_time")
-    end_time = data.get("end_time")
-
-    start_dt = datetime.datetime.fromisoformat(start_time)
-    end_dt = datetime.datetime.fromisoformat(end_time)
-    weekday = start_dt.weekday()
-
-    patient = request.user.patient_profile
-
-    try:
-        doctor = User.objects.get(username=doctor_username, role="DOCTOR").doctor_profile
-    except User.DoesNotExist:
-        return JsonResponse({"error": "Doctor not found"}, status=404)
-
-    availability = Availability.objects.filter(doctor=doctor, weekday=weekday).first()
-    if not availability:
-        return JsonResponse({"error": "Doctor not available on this day"}, status=400)
-
-    avail_start = datetime.datetime.combine(start_dt.date(), availability.start_time)
-    avail_end = datetime.datetime.combine(start_dt.date(), availability.end_time)
-
-    if start_dt < avail_start or end_dt > avail_end:
-        return JsonResponse({"error": "Time outside doctor's availability"}, status=400)
-
-    overlap = Appointment.objects.filter(
-        doctor=doctor,
-        start_time__lt=end_dt,
-        end_time__gt=start_dt
-    ).exists()
-    if overlap:
-        return JsonResponse({"error": "This time is already booked"}, status=400)
-
-    Appointment.objects.create(
-        patient=patient,
-        doctor=doctor,
-        start_time=start_dt,
-        end_time=end_dt
-    )
-
-    return JsonResponse({"message": "Appointment booked!"})
-
-
-# ---------------------------------------------------
-# UPDATE APPOINTMENT STATUS (DOCTOR ONLY)
-# ---------------------------------------------------
-@api_view(['POST'])
-@authentication_classes([JWTAuthentication])
-@permission_classes([IsAuthenticated])
-def update_appointment_status(request):
-
-    if request.user.role != "DOCTOR":
-        return JsonResponse({"error": "Only doctors can update status"}, status=403)
-
-    data = request.data
-    appointment_id = data.get("appointment_id")
-    new_status = data.get("status")
-
-    try:
-        appointment = Appointment.objects.get(id=appointment_id, doctor=request.user.doctor_profile)
-    except Appointment.DoesNotExist:
-        return JsonResponse({"error": "Appointment not found"}, status=404)
-
-    appointment.status = new_status
-    appointment.save()
-
-    return JsonResponse({"message": "Status updated"})
-
-
-# ---------------------------------------------------
-# PATIENT APPOINTMENTS (JWT Protected)
-# ---------------------------------------------------
-@authentication_classes([JWTAuthentication])
-@permission_classes([IsAuthenticated])
-def patient_appointments(request, username):
-
-    if request.user.role != "PATIENT" or request.user.username != username:
-        return JsonResponse({"error": "Unauthorized"}, status=403)
-
-    patient = request.user.patient_profile
-    appointments = patient.appointments.all().order_by("start_time")
-
-    return JsonResponse({
-        "appointments": [
-            {
-                "id": a.id,
-                "doctor": a.doctor.user.username,
-                "start_time": a.start_time,
-                "end_time": a.end_time,
-                "status": a.status
-            }
-            for a in appointments
-        ]
-    })
-
-
-# ---------------------------------------------------
-# DOCTOR: ALL APPOINTMENTS
-# ---------------------------------------------------
-@api_view(['GET'])
-@authentication_classes([JWTAuthentication])
-@permission_classes([IsAuthenticated])
-def doctor_all_appointments(request, username):
-
-    if request.user.role != "DOCTOR" or request.user.username != username:
-        return JsonResponse({"error": "Unauthorized"}, status=403)
-
-    doctor = request.user.doctor_profile
-    appointments = doctor.appointments.all().order_by("start_time")
-
-    return JsonResponse({
-        "appointments": [
-            {
-                "id": a.id,
-                "patient": a.patient.user.username,
-                "start_time": a.start_time,
-                "end_time": a.end_time,
-                "status": a.status
-            }
-            for a in appointments
-        ]
-    })
-
-
-# ---------------------------------------------------
-# DOCTOR: PENDING APPOINTMENTS
-# ---------------------------------------------------
-@api_view(['GET'])
-@authentication_classes([JWTAuthentication])
-@permission_classes([IsAuthenticated])
-def doctor_pending_appointments(request, username):
-
-    if request.user.role != "DOCTOR" or request.user.username != username:
-        return JsonResponse({"error": "Unauthorized"}, status=403)
-
-    doctor = request.user.doctor_profile
-    appointments = doctor.appointments.filter(status="PENDING")
-
-    return JsonResponse({
-        "appointments": [
-            {
-                "id": a.id,
-                "patient": a.patient.user.username,
-                "start_time": a.start_time,
-                "end_time": a.end_time,
-                "status": a.status
-            }
-            for a in appointments
-        ]
-    })
-
-
-# ---------------------------------------------------
-# DOCTOR: TODAY'S APPOINTMENTS
-# ---------------------------------------------------
-@api_view(['GET'])
-@authentication_classes([JWTAuthentication])
-@permission_classes([IsAuthenticated])
-def doctor_today_appointments(request, username):
-
-    if request.user.role != "DOCTOR" or request.user.username != username:
-        return JsonResponse({"error": "Unauthorized"}, status=403)
-
-    doctor = request.user.doctor_profile
-    today = date.today()
-    appointments = doctor.appointments.filter(start_time__date=today)
-
-    return JsonResponse({
-        "appointments": [
-            {
-                "id": a.id,
-                "patient": a.patient.user.username,
-                "start_time": a.start_time,
-                "end_time": a.end_time,
-                "status": a.status
-            }
-            for a in appointments
-        ]
-    })
-
-
-# ---------------------------------------------------
-# DOCTOR CALENDAR (Available Slots for Given Date)
-# ---------------------------------------------------
-@api_view(['GET'])
-@authentication_classes([JWTAuthentication])
-@permission_classes([IsAuthenticated])
-def doctor_calendar(request, username):
-
-    try:
-        doctor = User.objects.get(username=username, role="DOCTOR").doctor_profile
-    except User.DoesNotExist:
-        return JsonResponse({"error": "Doctor not found"}, status=404)
-
-    date_str = request.GET.get("date")
-    if not date_str:
-        return JsonResponse({"error": "Missing 'date' (YYYY-MM-DD)"}, status=400)
-
-    try:
-        date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
-    except ValueError:
-        return JsonResponse({"error": "Invalid date format"}, status=400)
-
-    weekday = date_obj.weekday()
-
-    availability = Availability.objects.filter(doctor=doctor, weekday=weekday).first()
-    if not availability:
-        return JsonResponse({"available_slots": []})
-
-    start_dt = datetime.datetime.combine(date_obj, availability.start_time)
-    end_dt = datetime.datetime.combine(date_obj, availability.end_time)
-
-    taken = Appointment.objects.filter(
-        doctor=doctor,
-        start_time__date=date_obj
-    )
-
-    taken_slots = [(a.start_time, a.end_time) for a in taken]
-
-    slots = []
-    current = start_dt
-    while current < end_dt:
-        slot_end = current + datetime.timedelta(minutes=30)
-
-        conflict = any(
-            t_start < slot_end and t_end > current
-            for t_start, t_end in taken_slots
-        )
-
-        if not conflict:
-            slots.append({
-                "start": current.isoformat(),
-                "end": slot_end.isoformat()
-            })
-
-        current = slot_end
-
-    return JsonResponse({"available_slots": slots})
-
-
-# ---------------------------------------------------
-# CREATE MEDICAL REPORT (DOCTOR ONLY)
-# ---------------------------------------------------
-@api_view(['POST'])
-@authentication_classes([JWTAuthentication])
-@permission_classes([IsAuthenticated])
-def create_medical_report(request):
-
-    if request.user.role != "DOCTOR":
-        return JsonResponse({"error": "Only doctors can create reports"}, status=403)
-
-    data = request.data
-    appointment_id = data.get("appointment_id")
-
-    try:
-        appointment = Appointment.objects.get(id=appointment_id, doctor=request.user.doctor_profile)
-    except Appointment.DoesNotExist:
-        return JsonResponse({"error": "Appointment not found"}, status=404)
-
-    if hasattr(appointment, "report"):
-        return JsonResponse({"error": "Report already exists"}, status=400)
-
-    report = MedicalReport.objects.create(
-        appointment=appointment,
-        diagnosis=data.get("diagnosis"),
-        prescription=data.get("prescription"),
-        notes=data.get("notes")
-    )
-
-    return JsonResponse({"message": "Report created", "report_id": report.id})
-
-
-# ---------------------------------------------------
-# GET MEDICAL REPORT (Doctor or Patient)
-# ---------------------------------------------------
-@api_view(['GET'])
-@authentication_classes([JWTAuthentication])
-@permission_classes([IsAuthenticated])
-def get_medical_report(request, appointment_id):
-
-    try:
-        report = MedicalReport.objects.get(appointment_id=appointment_id)
-    except MedicalReport.DoesNotExist:
-        return JsonResponse({"error": "Report not found"}, status=404)
-
-    appointment = report.appointment
-
-    if request.user.role == "PATIENT" and request.user != appointment.patient.user:
-        return JsonResponse({"error": "Not allowed"}, status=403)
-
-    if request.user.role == "DOCTOR" and request.user != appointment.doctor.user:
-        return JsonResponse({"error": "Not allowed"}, status=403)
-
-    return JsonResponse({
-        "appointment_id": appointment_id,
-        "doctor": appointment.doctor.user.username,
-        "patient": appointment.patient.user.username,
-        "diagnosis": report.diagnosis,
-        "prescription": report.prescription,
-        "notes": report.notes,
-        "created_at": report.created_at
-    })
-
-
-# ---------------------------------------------------
-# UPDATE MEDICAL REPORT (DOCTOR ONLY)
-# ---------------------------------------------------
-@api_view(['POST'])
-@authentication_classes([JWTAuthentication])
-@permission_classes([IsAuthenticated])
-def update_medical_report(request):
-
-    if request.user.role != "DOCTOR":
-        return JsonResponse({"error": "Only doctors can update reports"}, status=403)
-
-    data = request.data
-    report_id = data.get("report_id")
-
-    try:
-        report = MedicalReport.objects.get(id=report_id, appointment__doctor=request.user.doctor_profile)
-    except MedicalReport.DoesNotExist:
-        return JsonResponse({"error": "Report not found or unauthorized"}, status=404)
-
-    report.diagnosis = data.get("diagnosis", report.diagnosis)
-    report.prescription = data.get("prescription", report.prescription)
-    report.notes = data.get("notes", report.notes)
-    report.save()
-
-    return JsonResponse({"message": "Report updated!"})
-
-# ---------------------------------------------------
-# UPCOMING APPOINTMENTS (Reminders)
-# ---------------------------------------------------
-@api_view(['GET'])
-@authentication_classes([JWTAuthentication])
-@permission_classes([IsAuthenticated])
-def upcoming_appointments(request):
-
-    now = datetime.datetime.now()
-    tomorrow = now + datetime.timedelta(hours=24)
-
-    # Patient view
-    if request.user.role == "PATIENT":
-        appointments = Appointment.objects.filter(
-            patient=request.user.patient_profile,
-            start_time__gte=now,
-            start_time__lte=tomorrow
-        ).order_by("start_time")
-
-    # Doctor view
-    elif request.user.role == "DOCTOR":
-        appointments = Appointment.objects.filter(
-            doctor=request.user.doctor_profile,
-            start_time__gte=now,
-            start_time__lte=tomorrow
-        ).order_by("start_time")
-
-    else:
-        return JsonResponse({"error": "Invalid role"}, status=400)
-
-    return JsonResponse({
-        "upcoming": [
-            {
-                "id": a.id,
-                "patient": a.patient.user.username,
-                "doctor": a.doctor.user.username,
-                "start_time": a.start_time.isoformat(),
-                "end_time": a.end_time.isoformat(),
-                "status": a.status
-            }
-            for a in appointments
-        ]
-    })# ---------------------------------------------------
-# UPCOMING APPOINTMENTS (Reminders)
-# ---------------------------------------------------
-@api_view(['GET'])
-@authentication_classes([JWTAuthentication])
-@permission_classes([IsAuthenticated])
-def upcoming_appointments(request):
-
-    now = datetime.datetime.now()
-    tomorrow = now + datetime.timedelta(hours=24)
-
-    # Patient view
-    if request.user.role == "PATIENT":
-        appointments = Appointment.objects.filter(
-            patient=request.user.patient_profile,
-            start_time__gte=now,
-            start_time__lte=tomorrow
-        ).order_by("start_time")
-
-    # Doctor view
-    elif request.user.role == "DOCTOR":
-        appointments = Appointment.objects.filter(
-            doctor=request.user.doctor_profile,
-            start_time__gte=now,
-            start_time__lte=tomorrow
-        ).order_by("start_time")
-
-    else:
-        return JsonResponse({"error": "Invalid role"}, status=400)
-
-    return JsonResponse({
-        "upcoming": [
-            {
-                "id": a.id,
-                "patient": a.patient.user.username,
-                "doctor": a.doctor.user.username,
-                "start_time": a.start_time.isoformat(),
-                "end_time": a.end_time.isoformat(),
-                "status": a.status
-            }
-            for a in appointments
-        ]
-    })
-
-# ---------------------------------------------------
-# SIMPLE WEB PAGES (HTML) - not API
-# ---------------------------------------------------
-
-def web_login(request):
-    """Render a simple login page that calls /api/token/ via JavaScript."""
     return render(request, "accounts/login.html")
 
 
-def web_doctor_calendar(request):
-    """Render a simple page to view doctor's available slots using JWT."""
-    return render(request, "accounts/doctor_calendar.html")
+def logout_view(request):
+    logout(request)
+    messages.info(request, "You have been logged out.")
+    return redirect("login")
 
-def home_page(request):
-    return render(request, "accounts/home.html")
+
+def register_patient_view(request):
+    """
+    Replaces /register/patient/ API.
+    GET: show registration form.
+    POST: create User + PatientProfile, log in, redirect.
+    """
+    if request.method == "POST":
+        username = request.POST.get("username")
+        password = request.POST.get("password")
+        password2 = request.POST.get("password2")
+        phone = request.POST.get("phone")
+        gender = request.POST.get("gender")
+
+        if password != password2:
+            messages.error(request, "Passwords do not match.")
+        elif User.objects.filter(username=username).exists():
+            messages.error(request, "Username already exists.")
+        else:
+            user = User.objects.create_user(
+                username=username,
+                password=password,
+                role="PATIENT"
+            )
+            PatientProfile.objects.create(
+                user=user,
+                phone_number=phone,
+                gender=gender
+            )
+            login(request, user)
+            messages.success(request, "Patient account created and logged in.")
+            return redirect("home")
+
+    return render(request, "accounts/register_patient.html")
+
+
+def register_doctor_view(request):
+    """
+    Replaces /register/doctor/ API.
+    GET: show form.
+    POST: create User + DoctorProfile.
+    """
+    if request.method == "POST":
+        username = request.POST.get("username")
+        password = request.POST.get("password")
+        password2 = request.POST.get("password2")
+        specialty = request.POST.get("specialty")
+        clinic_room = request.POST.get("clinic_room")
+        bio = request.POST.get("bio")
+
+        if password != password2:
+            messages.error(request, "Passwords do not match.")
+        elif User.objects.filter(username=username).exists():
+            messages.error(request, "Username already exists.")
+        else:
+            user = User.objects.create_user(
+                username=username,
+                password=password,
+                role="DOCTOR"
+            )
+            DoctorProfile.objects.create(
+                user=user,
+                specialty=specialty,
+                clinic_room=clinic_room,
+                bio=bio
+            )
+            login(request, user)
+            messages.success(request, "Doctor account created and logged in.")
+            return redirect("home")
+
+    return render(request, "accounts/register_doctor.html")
+
+
+# ---------------------------------------------------
+# DOCTOR AVAILABILITY
+# ---------------------------------------------------
+@login_required
+def add_availability_view(request):
+    """
+    Replaces add_availability API.
+    Only doctors can access.
+    GET: show form.
+    POST: create availability record.
+    """
+    if getattr(request.user, "role", None) != "DOCTOR":
+        messages.error(request, "Only doctors can add availability.")
+        return redirect("home")
+
+    if request.method == "POST":
+        weekday = int(request.POST.get("weekday"))  # 0=Mon ... 6=Sun
+        start_time_str = request.POST.get("start_time")  # "HH:MM"
+        end_time_str = request.POST.get("end_time")
+
+        try:
+            start_time = datetime.datetime.strptime(start_time_str, "%H:%M").time()
+            end_time = datetime.datetime.strptime(end_time_str, "%H:%M").time()
+        except (TypeError, ValueError):
+            messages.error(request, "Invalid time format.")
+        else:
+            Availability.objects.create(
+                doctor=request.user.doctor_profile,
+                weekday=weekday,
+                start_time=start_time,
+                end_time=end_time
+            )
+            messages.success(request, "Availability added.")
+            return redirect("add_availability")
+
+    return render(request, "accounts/add_availability.html")
+
+
+# ---------------------------------------------------
+# DOCTOR CALENDAR – AVAILABLE SLOTS FOR GIVEN DATE
+# ---------------------------------------------------
+@login_required
+def doctor_calendar_view(request, username):
+    """
+    Replaces doctor_calendar API.
+    Shows a list of free 30-minute slots for a chosen date.
+    """
+    doctor_user = get_object_or_404(User, username=username, role="DOCTOR")
+    doctor = doctor_user.doctor_profile
+
+    # date passed as ?date=YYYY-MM-DD (default: today)
+    date_str = request.GET.get("date")
+    if not date_str:
+        date_obj = date.today()
+    else:
+        try:
+            date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            messages.error(request, "Invalid date format, using today.")
+            date_obj = date.today()
+
+    weekday = date_obj.weekday()
+    availability = Availability.objects.filter(doctor=doctor, weekday=weekday).first()
+
+    available_slots = []
+    if availability:
+        start_dt = datetime.datetime.combine(date_obj, availability.start_time)
+        end_dt = datetime.datetime.combine(date_obj, availability.end_time)
+
+        taken = Appointment.objects.filter(
+            doctor=doctor,
+            start_time__date=date_obj
+        )
+        taken_slots = [(a.start_time, a.end_time) for a in taken]
+
+        current = start_dt
+        while current < end_dt:
+            slot_end = current + datetime.timedelta(minutes=30)
+
+            conflict = any(
+                t_start < slot_end and t_end > current
+                for t_start, t_end in taken_slots
+            )
+
+            if not conflict:
+                available_slots.append(
+                    {
+                        "start": current,
+                        "end": slot_end,
+                    }
+                )
+
+            current = slot_end
+
+    context = {
+        "doctor": doctor,
+        "date": date_obj,
+        "available_slots": available_slots,
+    }
+    return render(request, "accounts/doctor_calendar.html", context)
+
+
+# ---------------------------------------------------
+# BOOK APPOINTMENT (PATIENT)
+# ---------------------------------------------------
+@login_required
+def book_appointment_view(request):
+    """
+    Replaces book_appointment API.
+    GET: show booking form.
+    POST: validate slot and create Appointment.
+    """
+    if getattr(request.user, "role", None) != "PATIENT":
+        messages.error(request, "Only patients can book appointments.")
+        return redirect("home")
+
+    doctors = DoctorProfile.objects.select_related("user").all()
+
+    if request.method == "POST":
+        doctor_username = request.POST.get("doctor")
+        start_time_str = request.POST.get("start_time")  # ISO: "YYYY-MM-DDTHH:MM"
+        end_time_str = request.POST.get("end_time")
+
+        try:
+            start_dt = datetime.datetime.fromisoformat(start_time_str)
+            end_dt = datetime.datetime.fromisoformat(end_time_str)
+        except (TypeError, ValueError):
+            messages.error(request, "Invalid start or end time.")
+            return render(request, "accounts/book_appointment.html", {"doctors": doctors})
+
+        try:
+            doctor_user = User.objects.get(username=doctor_username, role="DOCTOR")
+            doctor = doctor_user.doctor_profile
+        except User.DoesNotExist:
+            messages.error(request, "Doctor not found.")
+            return render(request, "accounts/book_appointment.html", {"doctors": doctors})
+
+        weekday = start_dt.weekday()
+        availability = Availability.objects.filter(doctor=doctor, weekday=weekday).first()
+        if not availability:
+            messages.error(request, "Doctor is not available on this day.")
+            return render(request, "accounts/book_appointment.html", {"doctors": doctors})
+
+        avail_start = datetime.datetime.combine(start_dt.date(), availability.start_time)
+        avail_end = datetime.datetime.combine(start_dt.date(), availability.end_time)
+
+        if start_dt < avail_start or end_dt > avail_end:
+            messages.error(request, "Time is outside doctor's availability.")
+            return render(request, "accounts/book_appointment.html", {"doctors": doctors})
+
+        overlap = Appointment.objects.filter(
+            doctor=doctor,
+            start_time__lt=end_dt,
+            end_time__gt=start_dt
+        ).exists()
+        if overlap:
+            messages.error(request, "This time slot is already booked.")
+            return render(request, "accounts/book_appointment.html", {"doctors": doctors})
+
+        Appointment.objects.create(
+            patient=request.user.patient_profile,
+            doctor=doctor,
+            start_time=start_dt,
+            end_time=end_dt
+        )
+        messages.success(request, "Appointment booked successfully.")
+        return redirect("patient_appointments")
+
+    return render(request, "accounts/book_appointment.html", {"doctors": doctors})
+
+
+# ---------------------------------------------------
+# UPDATE APPOINTMENT STATUS (DOCTOR)
+# ---------------------------------------------------
+@login_required
+def update_appointment_status_view(request, appointment_id):
+    """
+    Replaces update_appointment_status API.
+    Doctor chooses new status via form (e.g. PENDING / CONFIRMED / CANCELED).
+    """
+    if getattr(request.user, "role", None) != "DOCTOR":
+        messages.error(request, "Only doctors can update appointment status.")
+        return redirect("home")
+
+    appointment = get_object_or_404(
+        Appointment,
+        id=appointment_id,
+        doctor=request.user.doctor_profile
+    )
+
+    if request.method == "POST":
+        new_status = request.POST.get("status")
+        if new_status:
+            appointment.status = new_status
+            appointment.save()
+            messages.success(request, "Appointment status updated.")
+            return redirect("doctor_all_appointments")
+
+    return render(request, "accounts/update_appointment_status.html", {"appointment": appointment})
+
+
+# ---------------------------------------------------
+# PATIENT APPOINTMENTS
+# ---------------------------------------------------
+@login_required
+def patient_appointments_view(request):
+    """
+    Replaces patient_appointments API but uses logged-in user instead of URL username.
+    """
+    if getattr(request.user, "role", None) != "PATIENT":
+        messages.error(request, "Unauthorized.")
+        return redirect("home")
+
+    patient = request.user.patient_profile
+    appointments = patient.appointments.select_related("doctor__user").order_by("start_time")
+
+    return render(request, "accounts/patient_appointments.html", {
+        "appointments": appointments
+    })
+
+
+# ---------------------------------------------------
+# DOCTOR APPOINTMENTS (ALL / PENDING / TODAY)
+# ---------------------------------------------------
+@login_required
+def doctor_all_appointments_view(request):
+    if getattr(request.user, "role", None) != "DOCTOR":
+        messages.error(request, "Unauthorized.")
+        return redirect("home")
+
+    doctor = request.user.doctor_profile
+    appointments = doctor.appointments.select_related("patient__user").order_by("start_time")
+
+    return render(request, "accounts/doctor_appointments.html", {
+        "appointments": appointments
+    })
+
+
+@login_required
+def doctor_pending_appointments_view(request):
+    if getattr(request.user, "role", None) != "DOCTOR":
+        messages.error(request, "Unauthorized.")
+        return redirect("home")
+
+    doctor = request.user.doctor_profile
+    appointments = doctor.appointments.select_related("patient__user").filter(status="PENDING")
+
+    return render(request, "accounts/doctor_pending_appointments.html", {
+        "appointments": appointments
+    })
+
+
+@login_required
+def doctor_today_appointments_view(request):
+    if getattr(request.user, "role", None) != "DOCTOR":
+        messages.error(request, "Unauthorized.")
+        return redirect("home")
+
+    doctor = request.user.doctor_profile
+    today = date.today()
+    appointments = doctor.appointments.select_related("patient__user").filter(
+        start_time__date=today
+    )
+
+    return render(request, "accounts/doctor_today_appointments.html", {
+        "appointments": appointments,
+        "today": today,
+    })
+
+
+# ---------------------------------------------------
+# UPCOMING APPOINTMENTS (REMINDERS)
+# ---------------------------------------------------
+@login_required
+def upcoming_appointments_view(request):
+    """
+    Replaces upcoming_appointments API.
+    Shows appointments in the next 24 hours for patient/doctor.
+    """
+    now = datetime.datetime.now()
+    tomorrow = now + datetime.timedelta(hours=24)
+
+    role = getattr(request.user, "role", None)
+
+    if role == "PATIENT":
+        appointments = Appointment.objects.filter(
+            patient=request.user.patient_profile,
+            start_time__gte=now,
+            start_time__lte=tomorrow
+        ).order_by("start_time")
+    elif role == "DOCTOR":
+        appointments = Appointment.objects.filter(
+            doctor=request.user.doctor_profile,
+            start_time__gte=now,
+            start_time__lte=tomorrow
+        ).order_by("start_time")
+    else:
+        messages.error(request, "Invalid role.")
+        return redirect("home")
+
+    return render(request, "accounts/upcoming_appointments.html", {
+        "appointments": appointments,
+        "now": now,
+        "tomorrow": tomorrow,
+    })
+
+
+# ---------------------------------------------------
+# MEDICAL REPORTS
+# ---------------------------------------------------
+@login_required
+def create_medical_report_view(request, appointment_id):
+    """
+    Replaces create_medical_report API.
+    Only doctor for that appointment can create the report.
+    GET: show form.
+    POST: create report.
+    """
+    if getattr(request.user, "role", None) != "DOCTOR":
+        messages.error(request, "Only doctors can create reports.")
+        return redirect("home")
+
+    appointment = get_object_or_404(
+        Appointment,
+        id=appointment_id,
+        doctor=request.user.doctor_profile
+    )
+
+    if hasattr(appointment, "report"):
+        messages.error(request, "Report already exists for this appointment.")
+        return redirect("get_medical_report", appointment_id=appointment_id)
+
+    if request.method == "POST":
+        diagnosis = request.POST.get("diagnosis")
+        prescription = request.POST.get("prescription")
+        notes = request.POST.get("notes")
+
+        report = MedicalReport.objects.create(
+            appointment=appointment,
+            diagnosis=diagnosis,
+            prescription=prescription,
+            notes=notes
+        )
+        messages.success(request, "Report created.")
+        return redirect("get_medical_report", appointment_id=appointment_id)
+
+    return render(request, "accounts/create_medical_report.html", {
+        "appointment": appointment
+    })
+
+
+from django.http import Http404
+
+@login_required
+def get_medical_report_view(request, appointment_id):
+    # First get the appointment itself
+    appointment = get_object_or_404(Appointment, id=appointment_id)
+
+    # Permission check: only that doctor / patient
+    role = getattr(request.user, "role", None)
+    if role == "PATIENT" and request.user != appointment.patient.user:
+        messages.error(request, "You are not allowed to view this report.")
+        return redirect("home")
+    if role == "DOCTOR" and request.user != appointment.doctor.user:
+        messages.error(request, "You are not allowed to view this report.")
+        return redirect("home")
+
+    # Try to get report
+    try:
+        report = appointment.report
+    except MedicalReport.DoesNotExist:
+        # No report exists yet
+        if role == "DOCTOR":
+            messages.info(request, "No report exists for this appointment yet. Create one now.")
+            return redirect("create_medical_report", appointment_id=appointment_id)
+        else:
+            messages.info(request, "No report has been created yet for this appointment.")
+            return redirect("patient_appointments")
+
+    # If report exists, render as usual
+    return render(request, "accounts/medical_report.html", {
+        "appointment": appointment,
+        "report": report,
+    })
+
+
+@login_required
+def update_medical_report_view(request, report_id):
+    """
+    Replaces update_medical_report API.
+    Only the doctor of that appointment can edit.
+    """
+    if getattr(request.user, "role", None) != "DOCTOR":
+        messages.error(request, "Only doctors can update reports.")
+        return redirect("home")
+
+    report = get_object_or_404(
+        MedicalReport,
+        id=report_id,
+        appointment__doctor=request.user.doctor_profile
+    )
+
+    if request.method == "POST":
+        report.diagnosis = request.POST.get("diagnosis", report.diagnosis)
+        report.prescription = request.POST.get("prescription", report.prescription)
+        report.notes = request.POST.get("notes", report.notes)
+        report.save()
+        messages.success(request, "Report updated.")
+        return redirect("get_medical_report", appointment_id=report.appointment_id)
+
+    return render(request, "accounts/update_medical_report.html", {
+        "report": report,
+        "appointment": report.appointment,
+    })

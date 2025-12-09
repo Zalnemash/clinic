@@ -1,0 +1,31 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}Medical Report{% endblock %}
+
+{% block content %}
+<h2 class="mt-4">Medical Report</h2>
+
+<p>
+  Doctor: <strong>{{ appointment.doctor.user.username }}</strong><br>
+  Patient: <strong>{{ appointment.patient.user.username }}</strong><br>
+  Appointment: {{ appointment.start_time }} – {{ appointment.end_time }}<br>
+  Created at: {{ report.created_at }}
+</p>
+
+<hr>
+
+<h5>Diagnosis</h5>
+<p>{{ report.diagnosis|linebreaks }}</p>
+
+<h5>Prescription</h5>
+<p>{{ report.prescription|linebreaks }}</p>
+
+<h5>Notes</h5>
+<p>{{ report.notes|linebreaks }}</p>
+
+{% if user.role == "DOCTOR" %}
+  <a href="{% url 'update_medical_report' report.id %}" class="btn btn-sm btn-outline-primary">
+    Edit Report
+  </a>
+{% endif %}
+{% endblock %}

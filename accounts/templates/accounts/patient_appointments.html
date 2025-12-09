@@ -1,0 +1,32 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}My Appointments{% endblock %}
+
+{% block content %}
+<h2 class="mt-4">My Appointments</h2>
+
+{% if appointments %}
+<table class="table table-striped mt-3">
+  <thead>
+    <tr>
+      <th>Doctor</th>
+      <th>Start</th>
+      <th>End</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for a in appointments %}
+      <tr>
+        <td>{{ a.doctor.user.username }}</td>
+        <td>{{ a.start_time }}</td>
+        <td>{{ a.end_time }}</td>
+        <td>{{ a.status }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+  <p>You have no appointments.</p>
+{% endif %}
+{% endblock %}

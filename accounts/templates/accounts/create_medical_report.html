@@ -1,0 +1,32 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}Create Medical Report{% endblock %}
+
+{% block content %}
+<h2 class="mt-4">Create Medical Report</h2>
+
+<p>
+  Appointment with <strong>{{ appointment.patient.user.username }}</strong><br>
+  Time: {{ appointment.start_time }} – {{ appointment.end_time }}
+</p>
+
+<form method="post" class="mt-3">
+  {% csrf_token %}
+  <div class="mb-3">
+    <label class="form-label">Diagnosis</label>
+    <textarea name="diagnosis" class="form-control" rows="3"></textarea>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Prescription</label>
+    <textarea name="prescription" class="form-control" rows="3"></textarea>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Notes</label>
+    <textarea name="notes" class="form-control" rows="3"></textarea>
+  </div>
+
+  <button type="submit" class="btn btn-primary">Create Report</button>
+</form>
+{% endblock %}

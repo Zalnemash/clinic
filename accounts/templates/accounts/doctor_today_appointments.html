@@ -1,0 +1,32 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}Today's Appointments{% endblock %}
+
+{% block content %}
+<h2 class="mt-4">Today's Appointments ({{ today }})</h2>
+
+{% if appointments %}
+<table class="table table-striped mt-3">
+  <thead>
+    <tr>
+      <th>Patient</th>
+      <th>Start</th>
+      <th>End</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for a in appointments %}
+      <tr>
+        <td>{{ a.patient.user.username }}</td>
+        <td>{{ a.start_time }}</td>
+        <td>{{ a.end_time }}</td>
+        <td>{{ a.status }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+  <p>No appointments for today.</p>
+{% endif %}
+{% endblock %}

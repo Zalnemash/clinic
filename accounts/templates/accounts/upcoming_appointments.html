@@ -1,0 +1,36 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}Upcoming Appointments{% endblock %}
+
+{% block content %}
+<h2 class="mt-4">Upcoming Appointments (next 24 hours)</h2>
+
+<p>From {{ now }} to {{ tomorrow }}</p>
+
+{% if appointments %}
+<table class="table table-striped mt-3">
+  <thead>
+    <tr>
+      <th>Patient</th>
+      <th>Doctor</th>
+      <th>Start</th>
+      <th>End</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for a in appointments %}
+      <tr>
+        <td>{{ a.patient.user.username }}</td>
+        <td>{{ a.doctor.user.username }}</td>
+        <td>{{ a.start_time }}</td>
+        <td>{{ a.end_time }}</td>
+        <td>{{ a.status }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+  <p>No upcoming appointments.</p>
+{% endif %}
+{% endblock %}

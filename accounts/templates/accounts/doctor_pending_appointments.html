@@ -1,0 +1,38 @@
+{% extends "accounts/base.html" %}
+
+{% block title %}Pending Appointments{% endblock %}
+
+{% block content %}
+<h2 class="mt-4">Pending Appointments</h2>
+
+{% if appointments %}
+<table class="table table-striped mt-3">
+  <thead>
+    <tr>
+      <th>Patient</th>
+      <th>Start</th>
+      <th>End</th>
+      <th>Status</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for a in appointments %}
+      <tr>
+        <td>{{ a.patient.user.username }}</td>
+        <td>{{ a.start_time }}</td>
+        <td>{{ a.end_time }}</td>
+        <td>{{ a.status }}</td>
+        <td>
+          <a href="{% url 'update_appointment_status' a.id %}" class="btn btn-sm btn-outline-primary">
+            Update
+          </a>
+        </td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+  <p>No pending appointments.</p>
+{% endif %}
+{% endblock %}
