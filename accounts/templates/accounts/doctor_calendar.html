@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Doctor Calendar - Clinic Appointment Manager</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+            background: #f5f6fa;
+        }
+        h1 {
+            color: #2c3e50;
+        }
+        .box {
+            padding: 20px;
+            border: 1px solid #ddd;
+            width: 380px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            background: #fff;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+        }
+        button {
+            padding: 8px 12px;
+            background: #27ae60;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 6px;
+        }
+        button:hover {
+            background: #1e8449;
+        }
+        ul {
+            list-style-type: none;
+            padding-left: 0;
+        }
+        li {
+            background: #ecf0f1;
+            padding: 6px 10px;
+            border-radius: 6px;
+            margin-bottom: 5px;
+            font-family: monospace;
+        }
+        .note {
+            font-size: 13px;
+            color: #555;
+        }
+        .link {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Doctor Calendar</h1>
+
+<div class="link">
+    <a href="/api/web/login/">⬅ Back to Login</a>
+</div>
+
+<div class="box">
+    <h3>View Available Slots</h3>
+
+    <label>Doctor Username:</label><br>
+    <input type="text" id="doctor_username" value="DrHala"><br><br>
+
+    <label>Date:</label><br>
+    <input type="date" id="date"><br><br>
+
+    <label>Access Token (optional):</label><br>
+    <input type="text" id="token" placeholder="Leave empty to use token from login"><br><br>
+
+    <button onclick="loadSlots()">Load Slots</button>
+
+    <p class="note">
+        This page calls the backend endpoint:<br>
+        <code>/api/doctor/&lt;username&gt;/calendar/?date=YYYY-MM-DD</code><br>
+        using <strong>Authorization: Bearer &lt;token&gt;</strong>.
+    </p>
+</div>
+
+<h3>Available Slots</h3>
+<ul id="slots">
+    <li>No data yet.</li>
+</ul>
+
+<script>
+function setToday() {
+    const today = new Date().toISOString().slice(0, 10);
+    document.getElementById("date").value = today;
+}
+setToday();
+
+async function loadSlots() {
+    const doctor = document.getElementById("doctor_username").value.trim();
+    const date = document.getElementById("date").value;
+    let token = document.getElementById("token").value.trim();
+
+    if (!doctor || !date) {
+        alert("Please enter doctor username and date.");
+        return;
+    }
+
+    // If token field is empty, try to use token from localStorage (from login page)
+    if (!token) {
+        token = localStorage.getItem("access");
+    }
+
+    if (!token) {
+        alert("No access token found. Please login first on the login page.");
+        return;
+    }
+
+    const url = `/api/doctor/${encodeURIComponent(doctor)}/calendar/?date=${encodeURIComponent(date)}`;
+    const res = await fetch(url, {
+        headers: {
+            "Authorization": "Bearer " + token
+        }
+    });
+
+    const data = await res.json();
+    const list = document.getElementById("slots");
+    list.innerHTML = "";
+
+    if (!res.ok) {
+        const li = document.createElement("li");
+        li.textContent = "Error: " + JSON.stringify(data);
+        list.appendChild(li);
+        return;
+    }
+
+    if (!data.available_slots || data.available_slots.length === 0) {
+        const li = document.createElement("li");
+        li.textContent = "No available slots for this date.";
+        list.appendChild(li);
+        return;
+    }
+
+    data.available_slots.forEach(slot => {
+        const li = document.createElement("li");
+        li.textContent = `${slot.start}  →  ${slot.end}`;
+        list.appendChild(li);
+    });
+}
+</script>
+
+</body>
+</html>

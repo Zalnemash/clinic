@@ -8,7 +8,7 @@ from rest_framework_simplejwt.views import (
 urlpatterns = [
     # Django admin
     path('admin/', admin.site.urls),
-
+    path('', include('accounts.urls')),
     # All your API endpoints from accounts app
     path('api/', include('accounts.urls')),
 

@@ -29,4 +29,10 @@ urlpatterns = [
     path("report/create/", views.create_medical_report),
     path("report/<int:appointment_id>/", views.get_medical_report),
     path("report/update/", views.update_medical_report),
+
+    # Web pages (HTML frontend)
+    path("web/login/", views.web_login, name="web_login"),
+    path("web/doctor/calendar/", views.web_doctor_calendar, name="web_doctor_calendar"),
+    path("", views.home_page, name="home"),
+
 ]

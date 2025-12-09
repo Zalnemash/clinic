@@ -9,7 +9,7 @@ import json
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
-
+from django.shortcuts import render
 from .models import (
     PatientProfile,
     DoctorProfile,
@@ -553,3 +553,19 @@ def upcoming_appointments(request):
             for a in appointments
         ]
     })
+
+# ---------------------------------------------------
+# SIMPLE WEB PAGES (HTML) - not API
+# ---------------------------------------------------
+
+def web_login(request):
+    """Render a simple login page that calls /api/token/ via JavaScript."""
+    return render(request, "accounts/login.html")
+
+
+def web_doctor_calendar(request):
+    """Render a simple page to view doctor's available slots using JWT."""
+    return render(request, "accounts/doctor_calendar.html")
+
+def home_page(request):
+    return render(request, "accounts/home.html")
