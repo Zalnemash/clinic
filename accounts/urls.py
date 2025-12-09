@@ -34,4 +34,8 @@ urlpatterns = [
     path("report/create/<int:appointment_id>/", views.create_medical_report_view, name="create_medical_report"),
     path("report/<int:appointment_id>/", views.get_medical_report_view, name="get_medical_report"),
     path("report/update/<int:report_id>/", views.update_medical_report_view, name="update_medical_report"),
+    path("doctor/<str:username>/available-dates/", views.doctor_available_dates, name="doctor_available_dates"),
+    path("api/doctor/<str:username>/available-slots/",
+     views.doctor_available_slots,
+     name="doctor_available_slots"),
 ]

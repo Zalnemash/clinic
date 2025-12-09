@@ -5,7 +5,10 @@ from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout, get_user_model
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render, redirect, get_object_or_404
-
+# DRF decorators for the new API endpoint
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from .models import (
     PatientProfile,
     DoctorProfile,
@@ -13,7 +16,7 @@ from .models import (
     Availability,
     MedicalReport
 )
-
+from django.http import JsonResponse
 User = get_user_model()
 
 
@@ -34,23 +37,33 @@ def home_page(request):
 # ---------------------------------------------------
 # AUTH VIEWS
 # ---------------------------------------------------
+from rest_framework_simplejwt.tokens import RefreshToken
+
 def login_view(request):
-    """
-    Replaces login_user API.
-    GET: show login form.
-    POST: authenticate and log in, then redirect to home.
-    """
     if request.method == "POST":
         username = request.POST.get("username")
         password = request.POST.get("password")
 
         user = authenticate(request, username=username, password=password)
+
         if user is None:
             messages.error(request, "Invalid username or password.")
-        else:
-            login(request, user)
-            messages.success(request, f"Welcome back, {user.username}!")
-            return redirect("home")
+            return render(request, "accounts/login.html")
+
+        # Log in normally (session)
+        login(request, user)
+
+        # ---- Generate JWT Tokens ----
+        refresh = RefreshToken.for_user(user)
+        access_token = str(refresh.access_token)
+        refresh_token = str(refresh)
+
+        # Save them in the user's session
+        request.session["access_token"] = access_token
+        request.session["refresh_token"] = refresh_token
+
+        messages.success(request, f"Welcome back, {user.username}!")
+        return redirect("home")
 
     return render(request, "accounts/login.html")
 
@@ -547,3 +560,101 @@ def update_medical_report_view(request, report_id):
         "report": report,
         "appointment": report.appointment,
     })
+@api_view(['GET'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def doctor_available_dates(request, username):
+    """
+    Returns dates within the next 14 days where the doctor has availability.
+    """
+    try:
+        doctor = User.objects.get(username=username, role="DOCTOR").doctor_profile
+    except User.DoesNotExist:
+        return JsonResponse({"error": "Doctor not found"}, status=404)
+
+    today = datetime.date.today()
+    end_date = today + datetime.timedelta(days=14)
+
+    available_days = set(
+        Availability.objects.filter(doctor=doctor)
+        .values_list("weekday", flat=True)
+    )
+
+    result = []
+    current = today
+
+    while current <= end_date:
+        if current.weekday() in available_days:
+            result.append(current.isoformat())
+        current += datetime.timedelta(days=1)
+
+    return JsonResponse({"available_dates": result})
+@api_view(['GET'])
+@authentication_classes([JWTAuthentication])
+@permission_classes([IsAuthenticated])
+def doctor_available_slots(request, username):
+    """
+    Returns available 15-minute slots for a specific date.
+    """
+    import datetime
+
+    # Find doctor
+    try:
+        doctor = User.objects.get(username=username, role="DOCTOR").doctor_profile
+    except User.DoesNotExist:
+        return JsonResponse({"error": "Doctor not found"}, status=404)
+
+    # Get date
+    date_str = request.GET.get("date")
+    if not date_str:
+        return JsonResponse({"error": "Date is required"}, status=400)
+
+    try:
+        date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
+    except ValueError:
+        return JsonResponse({"error": "Invalid date format"}, status=400)
+
+    weekday = date_obj.weekday()
+
+    # Check availability
+    availability = Availability.objects.filter(
+        doctor=doctor,
+        weekday=weekday
+    ).first()
+
+    if not availability:
+        return JsonResponse({"slots": []})
+
+    # Generate 15-min slots
+    start_dt = datetime.datetime.combine(date_obj, availability.start_time)
+    end_dt = datetime.datetime.combine(date_obj, availability.end_time)
+
+    # Appointments already taken
+    taken = Appointment.objects.filter(
+        doctor=doctor,
+        start_time__date=date_obj
+    )
+    taken_slots = [(a.start_time, a.end_time) for a in taken]
+
+    slots = []
+    current = start_dt
+
+    while current < end_dt:
+        slot_end = current + datetime.timedelta(minutes=15)
+
+        overlap = any(
+            t_start < slot_end and t_end > current
+            for t_start, t_end in taken_slots
+        )
+
+        if not overlap:
+            label = f"{current.time().strftime('%H:%M')} - {slot_end.time().strftime('%H:%M')}"
+            slots.append({
+                "start": current.isoformat(),
+                "end": slot_end.isoformat(),
+                "label": label
+            })
+
+        current = slot_end
+
+    return JsonResponse({"slots": slots})
